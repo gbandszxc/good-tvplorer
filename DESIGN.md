@@ -1,51 +1,53 @@
-# Design
+# 设计规范
 
-## Metadata
+## 元数据
 
-- Product: Good TVplorer
-- Register: product
-- Platform: Android TV
-- UI stack: Jetpack Compose + Material 3 primitives
+- 产品：Good TVplorer
+- 类型：product
+- 平台：Android TV
+- UI 技术栈：Jetpack Compose + Material 3 基础组件
 
-## Design Intent
+## 设计意图
 
 Good TVplorer 是客厅电视上的媒体文件工具。方向采用“冷静的 NAS 媒体库”：比传统文件管理器更适合图片、音频、视频的快速预览，但仍保持工具界面的密度、速度和遥控器优先。
 
-## Color
+## 色彩
 
-Current palette comes from `TvTheme.kt` and should stay restrained, with a calm slate-blue media-library surface and amber focus.
+当前配色来自 `TvTheme.kt`，整体应保持克制：以冷静的石板蓝承载媒体库界面，用琥珀色表达焦点。
 
-| Role | Hex | Usage |
+| 角色 | Hex | 用途 |
 | --- | --- | --- |
-| Background | `#0B121A` | App background and preview chrome |
-| Rail / Panel | `#101A26` | Source rail, home SMB panel, quick preview panel |
-| Surface | `#152232` | Buttons, rows, tiles |
-| Primary | `#FFC857` | Focused surfaces and high-priority action feedback |
-| On Primary | `#151007` | Text/icons on focused primary |
-| On Background | `#F3F7FA` | Main text |
-| Secondary | `#7CC7D8` | Section labels, quiet status accents |
-| Error | `#FFA3A3` | Error messages |
-| Muted Text | `#A8B8C7` / `#728397` | Secondary labels and remote hints |
+| 背景 | `#0B121A` | App 背景和预览区域底色 |
+| 导航栏 / 面板 | `#101A26` | 来源栏、首页 SMB 面板、快速预览面板 |
+| 表面 | `#152232` | 按钮、列表行、网格卡片 |
+| 主色 | `#FFC857` | 焦点表面和高优先级操作反馈 |
+| 主色文字 | `#151007` | 焦点主色上的文字和图标 |
+| 背景文字 | `#F3F7FA` | 主要文字 |
+| 次要色 | `#7CC7D8` | 区块标题、低调状态强调 |
+| 错误 | `#FFA3A3` | 错误消息 |
+| 弱化文字 | `#A8B8C7` / `#728397` | 次级说明和遥控器提示 |
 
-Primary color is for focus and confirmation, not decoration. Avoid Material You-style dynamic palettes in MVP; TV readability and consistency win.
+主色用于焦点和确认反馈，不作为装饰色。MVP 阶段避免 Material You 风格的动态配色；电视端优先保证可读性和一致性。
 
-## Typography
+## 字体
 
-Use one sans family through Compose defaults. Product UI uses fixed sizes, not fluid typography.
+使用 Compose 默认的单一无衬线字体族。产品 UI 使用固定字号，不使用流式字体。
 
-- App title: `40sp`
-- Screen path/header: `26-32sp`
-- List item title: `25sp`, semibold
-- List metadata: `18sp`
-- Preview text: `24sp`, `34sp` line height
-- Button label: `24sp`, semibold
-- Grid tile title: `18sp`, semibold
+运行时字体缩放默认值为 `85%`，以提高电视端信息密度。显示设置弹窗提供 `75% / 85% / 100% / 115%` 四档；新增文字必须在四档下都保持可读。
 
-Text must fit inside focused surfaces. Long filenames should use one-line truncation in rows and full names in preview screens where space allows.
+- App 标题：`40sp`
+- 页面路径 / 标题：`26-32sp`
+- 列表项标题：`25sp`，semibold
+- 列表元信息：`18sp`
+- 预览正文：`24sp`，`34sp` 行高
+- 按钮文字：`24sp`，semibold
+- 网格卡片标题：`18sp`，semibold
 
-## Layout
+文字必须完整容纳在焦点表面内。长文件名在列表行中单行截断；在空间允许的预览页中展示完整名称。
 
-The app uses full-screen bands, not nested cards.
+## 布局
+
+App 使用全屏分区布局，不使用卡片套卡片。
 
 ```text
 Home
@@ -66,70 +68,82 @@ Browser
 +----------------------------------------------------------------+
 ```
 
-Spacing should stay large enough for TV: page padding around `36-56dp`, row padding around `18dp`, row gap around `10dp`, focused target height large enough to acquire from distance.
+间距需要适合电视端观看：页面内边距约 `36-56dp`，列表行内边距约 `18dp`，行间距约 `10dp`，可聚焦目标高度必须足够远距离选中。
 
-## Components
+## 组件
 
 ### TvButton
 
-- Shape: `8dp` radius
-- Default: surface background, light text
-- Focused: primary background, dark text, `3dp` white border
-- Behavior: focusable, clickable, D-pad confirmable
+- 形状：`8dp` 圆角
+- 默认态：表面色背景、浅色文字
+- 焦点态：主色背景、深色文字、`3dp` 浅色描边
+- 行为：可聚焦、可点击、可用方向键确认
 
-### File Row
+### 文件列表行
 
-- Shape: `8dp` radius
-- Default: surface background
-- Focused: amber primary background, dark text, `3dp` pale amber border
-- Contents: thumbnail or type marker, filename, size/time metadata
-- Directory rows sort before files
+- 形状：`8dp` 圆角
+- 默认态：表面色背景
+- 焦点态：琥珀主色背景、深色文字、`3dp` 浅琥珀描边
+- 内容：缩略图或类型标记、文件名、大小 / 时间元信息
+- 排序：目录行排在文件之前
 
-### File Tile
+### 文件网格卡片
 
-- Used in grid mode for image, audio, and video browsing.
-- Thumbnail ratio: `16:10`.
-- If no thumbnail exists, show a compact type marker (`DIR`, `IMG`, `AUD`, `VID`, `TXT`, `FILE`).
-- Focused tile uses the same amber focus surface as rows.
+- 用于网格模式下浏览图片、音频和视频。
+- 缩略图比例：`16:10`。
+- 如果没有缩略图，显示紧凑类型标记（`DIR`、`IMG`、`AUD`、`VID`、`TXT`、`FILE`）。
+- 焦点态与列表行使用相同的琥珀焦点表面。
 
-### Quick Preview Panel
+### 快速预览面板
 
-- Right-side fixed panel in browser screens.
-- Shows focused item thumbnail/cover/frame, filename, type, size, and time.
-- SMB previews are supported by caching the target media into app cache before thumbnail extraction.
+- 浏览页右侧固定面板。
+- 展示当前焦点项的缩略图 / 封面 / 帧图、文件名、类型、大小和时间。
+- SMB 预览通过先把目标媒体缓存到 App cache 后再提取缩略图实现。
 
-### Dialogs
+### 弹窗
 
-SMB add dialog uses standard Material dialog and text fields for now. All actions must remain focusable by remote. Future work should reduce text entry by supporting saved servers, QR/import, or recent hosts.
+添加 SMB 弹窗当前使用标准 Material 弹窗和文本输入框。所有操作必须可被遥控器聚焦。后续应通过已保存服务器、二维码 / 导入或最近主机减少电视端文本输入。
 
-## States
+显示设置使用紧凑弹窗：
 
-- Loading: spinner plus clear copy is acceptable for MVP; future list loading should prefer skeleton rows.
-- Empty: explicit copy, e.g. `目录为空`.
-- Error: user-readable message, no password/log leakage.
-- Preview loading: center spinner on black or dark background.
+```text
++----------------------+
+| 显示设置             |
+| 字体缩放 85%         |
+| [75%] [85%] [100%]   |
+| [115%]               |
+| [关闭]               |
++----------------------+
+```
 
-## Motion
+## 状态
 
-Motion should be short and state-driven only.
+- 加载：MVP 阶段可使用 spinner 加清晰文案；后续列表加载优先使用骨架行。
+- 空状态：使用明确文案，例如 `目录为空`。
+- 错误：展示用户可理解的消息，不泄露密码或日志细节。
+- 预览加载：在黑色或深色背景中心显示 spinner。
 
-- Focus transitions: 150-200 ms color/border; no bounce.
-- Loading/preview transitions: simple fade or instant.
-- No page-load choreography.
-- No decorative bounce, elastic, or long stagger sequences.
+## 动效
 
-## Accessibility
+动效应短促，并且只由状态变化驱动。
 
-- Every actionable control must be focusable.
-- Focus state must remain visible at TV viewing distance.
-- Do not rely on color alone; use text and layout state.
-- Maintain high contrast for text and focused controls.
-- Touch should work as a fallback, but the main path is D-pad.
+- 焦点过渡：颜色 / 描边变化控制在 150-200ms；不要弹跳。
+- 加载 / 预览过渡：简单淡入淡出或瞬时切换。
+- 不做页面加载编排动画。
+- 不做装饰性的弹跳、弹性或长交错动画。
 
-## Known Design Debt
+## 可访问性
 
-- Current icons are text markers (`DIR`, `IMG`, `TXT`, `AUD`, `VID`, `FILE`); replace with a consistent icon set.
-- Loading uses centered spinners; add list skeletons when browser polish starts.
-- SMB text entry is heavy on TV; add better saved/recent connection flows.
-- Preview image navigation does not yet support left/right sibling switching.
-- Video preview is thumbnail-only; playback is a later feature.
+- 每个可操作控件都必须可聚焦。
+- 焦点状态必须在电视观看距离下清晰可见。
+- 不只依赖颜色表达状态；同时使用文字和布局状态。
+- 文字和焦点控件必须保持高对比度。
+- 触屏可作为兜底，但主路径是方向键。
+
+## 已知设计债
+
+- 当前图标是文字标记（`DIR`、`IMG`、`TXT`、`AUD`、`VID`、`FILE`）；后续替换为一致的图标体系。
+- 加载态目前使用居中 spinner；浏览器体验打磨时补充列表骨架屏。
+- SMB 文本输入在电视端负担较重；后续增加更好的已保存 / 最近连接流程。
+- 图片预览尚不支持左右切换同级文件。
+- 视频预览当前只有缩略图；播放能力后续接入。

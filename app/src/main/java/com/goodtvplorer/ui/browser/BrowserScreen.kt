@@ -4,7 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +46,7 @@ import com.goodtvplorer.data.FileItem
 import com.goodtvplorer.data.FileKind
 import com.goodtvplorer.domain.Formatters
 import com.goodtvplorer.ui.components.TvButton
+import com.goodtvplorer.ui.components.tvOkClick
 import com.goodtvplorer.viewmodel.BrowserState
 import com.goodtvplorer.viewmodel.BrowserViewMode
 import com.goodtvplorer.viewmodel.MainViewModel
@@ -62,12 +62,13 @@ fun BrowserScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onToggleView: () -> Unit,
+    onDisplaySettings: () -> Unit,
 ) {
     var focusedItem by remember(state.items) { mutableStateOf<FileItem?>(state.items.firstOrNull()) }
     val preview = focusedItem ?: state.items.firstOrNull()
 
     Column(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(28.dp)) {
-        TopBar(path, viewMode, onToggleView, onRefresh, onBack)
+        TopBar(path, viewMode, onToggleView, onRefresh, onDisplaySettings, onBack)
         Row(Modifier.fillMaxSize().padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             SourceRail()
             Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -93,7 +94,7 @@ fun BrowserScreen(
 }
 
 @Composable
-private fun TopBar(path: String, viewMode: BrowserViewMode, onToggleView: () -> Unit, onRefresh: () -> Unit, onBack: () -> Unit) {
+private fun TopBar(path: String, viewMode: BrowserViewMode, onToggleView: () -> Unit, onRefresh: () -> Unit, onDisplaySettings: () -> Unit, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column {
             Text("Good TVplorer", color = Color(0xFFEEF6FB), fontSize = 25.sp, fontWeight = FontWeight.Bold)
@@ -102,6 +103,7 @@ private fun TopBar(path: String, viewMode: BrowserViewMode, onToggleView: () -> 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvButton(if (viewMode == BrowserViewMode.Grid) "网格" else "列表", onClick = onToggleView)
             TvButton("刷新", onClick = onRefresh)
+            TvButton("显示", onClick = onDisplaySettings)
             TvButton("返回", onClick = onBack)
         }
     }
@@ -160,7 +162,7 @@ private fun FocusSurface(modifier: Modifier, onFocus: () -> Unit, onClick: () ->
                 if (it.isFocused) onFocus()
             }
             .focusable()
-            .clickable(onClick = onClick),
+            .tvOkClick(onClick),
     ) {
         content(focused)
     }

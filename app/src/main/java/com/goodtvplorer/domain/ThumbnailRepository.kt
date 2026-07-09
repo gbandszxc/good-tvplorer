@@ -2,6 +2,7 @@ package com.goodtvplorer.domain
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.ThumbnailUtils
 import android.os.Build
@@ -15,6 +16,26 @@ import java.io.File
 import java.security.MessageDigest
 
 class ThumbnailRepository(private val context: Context) {
+    suspend fun thumbnailFile(source: FileSource, handle: FileHandle): File = withContext(Dispatchers.IO) {
+        val file = File(context.cacheDir, "image-thumbs/${hash(handle.sourceKey + "|" + handle.path)}.jpg")
+        if (file.exists() && file.length() > 0L) return@withContext file
+
+        val bytes = source.readPrefix(handle.path, 512 * 1024)
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = 4
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        if (bitmap != null) {
+            file.parentFile?.mkdirs()
+            file.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 60, out) }
+            bitmap.recycle()
+            file
+        } else {
+            imageFile(source, handle)
+        }
+    }
+
     suspend fun imageFile(source: FileSource, handle: FileHandle): File = withContext(Dispatchers.IO) {
         val ext = handle.path.substringAfterLast('.', "img")
         val file = File(context.cacheDir, "images/${hash(handle.sourceKey + "|" + handle.path)}.$ext")

@@ -22,6 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,9 +44,21 @@ fun TvButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
             .border(BorderStroke(border, if (focused) Color(0xFFFFE3A1) else Color(0xFF26384B)), RoundedCornerShape(8.dp))
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .clickable(onClick = onClick)
+            .tvOkClick(onClick)
             .padding(PaddingValues(horizontal = 28.dp, vertical = 18.dp))
     ) {
         Text(text, color = fg, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
     }
 }
+
+fun Modifier.tvOkClick(onClick: () -> Unit): Modifier = onPreviewKeyEvent { event ->
+    if (
+        event.type == KeyEventType.KeyUp &&
+        (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter)
+    ) {
+        onClick()
+        true
+    } else {
+        false
+    }
+}.clickable(onClick = onClick)

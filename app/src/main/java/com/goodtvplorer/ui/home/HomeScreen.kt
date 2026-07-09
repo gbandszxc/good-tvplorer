@@ -38,6 +38,7 @@ fun HomeScreen(
     onLocal: () -> Unit,
     onOpenSmb: (String) -> Unit,
     onAddSmb: (SmbConnectionInfo) -> Unit,
+    onDisplaySettings: () -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(40.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
@@ -47,6 +48,7 @@ fun HomeScreen(
             Spacer(Modifier.height(16.dp))
             TvButton("本地文件", modifier = Modifier.fillMaxWidth(), onClick = onLocal)
             TvButton("添加 SMB", modifier = Modifier.fillMaxWidth(), onClick = { showDialog = true })
+            TvButton("显示设置", modifier = Modifier.fillMaxWidth(), onClick = onDisplaySettings)
             Spacer(Modifier.weight(1f))
             Text("OK 打开  ·  Back 返回", color = Color(0xFF728397), fontSize = 17.sp)
         }

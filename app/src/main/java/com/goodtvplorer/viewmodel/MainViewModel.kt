@@ -7,6 +7,7 @@ import com.goodtvplorer.data.FileHandle
 import com.goodtvplorer.data.FileItem
 import com.goodtvplorer.data.FileKind
 import com.goodtvplorer.data.FileSource
+import com.goodtvplorer.data.DisplaySettingsStore
 import com.goodtvplorer.data.LocalFileSource
 import com.goodtvplorer.data.SmbConnectionInfo
 import com.goodtvplorer.data.SmbConnectionStore
@@ -54,11 +55,13 @@ data class MainUiState(
     val preview: PreviewState = PreviewState(),
     val thumbnails: Map<String, File> = emptyMap(),
     val browserViewMode: BrowserViewMode = BrowserViewMode.Grid,
+    val fontScale: Float = 0.85f,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val local = LocalFileSource(app)
     private val store = SmbConnectionStore(app)
+    private val display = DisplaySettingsStore(app)
     private val thumbnails = ThumbnailRepository(app)
     private val audioCache = AudioCacheManager(app)
     private val sources = mutableMapOf<String, FileSource>(local.key to local)
@@ -71,6 +74,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 sources.keys.filter { it.startsWith("smb:") }.forEach { sources.remove(it) }
                 connections.forEach { info -> sources["smb:${info.id}"] = SmbFileSource(info) }
                 _state.update { it.copy(smbConnections = connections) }
+            }
+        }
+        viewModelScope.launch {
+            display.fontScale.collectLatest { fontScale ->
+                _state.update { it.copy(fontScale = fontScale) }
             }
         }
     }
@@ -96,6 +104,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(browserViewMode = if (it.browserViewMode == BrowserViewMode.Grid) BrowserViewMode.List else BrowserViewMode.Grid)
         }
+    }
+
+    fun setFontScale(value: Float) {
+        viewModelScope.launch { display.setFontScale(value) }
     }
 
     fun openBrowser(sourceKey: String, path: String) {
@@ -150,11 +162,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun cacheThumbnails(source: FileSource, items: List<FileItem>) {
-        items.filter { it.kind == FileKind.Image || it.kind == FileKind.Audio || it.kind == FileKind.Video }.take(60).forEach { item ->
-            viewModelScope.launch {
-                runCatching { thumbnails.previewFile(source, item.handle, item.kind) }
+        viewModelScope.launch {
+            items.filter { it.kind == FileKind.Image }.take(60).forEach { item ->
+                runCatching { thumbnails.thumbnailFile(source, item.handle) }
                     .onSuccess { file ->
-                        if (file != null) _state.update { state -> state.copy(thumbnails = state.thumbnails + (thumbKey(item.handle) to file)) }
+                        _state.update { state -> state.copy(thumbnails = state.thumbnails + (thumbKey(item.handle) to file)) }
                     }
             }
         }
@@ -164,6 +176,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val source = sources[handle.sourceKey] ?: return showError("文件源不存在")
         _state.update { it.copy(screen = Screen.ImagePreview(handle.sourceKey, handle.path, name), preview = PreviewState(loading = true)) }
         viewModelScope.launch {
+            runCatching { thumbnails.thumbnailFile(source, handle) }
+                .onSuccess { file -> _state.update { it.copy(preview = PreviewState(file = file)) } }
             runCatching { thumbnails.imageFile(source, handle) }
                 .onSuccess { file -> _state.update { it.copy(preview = PreviewState(file = file)) } }
                 .onFailure { e -> _state.update { it.copy(preview = PreviewState(error = readable(e))) } }
