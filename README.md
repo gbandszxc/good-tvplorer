@@ -28,10 +28,12 @@ AGP 9 已内置 Kotlin 支持，因此项目不再应用 `org.jetbrains.kotlin.a
 - SMB：手动保存名称、Host、Port、Share、用户名、密码、Domain，并浏览共享目录。
 - 统一文件源接口：`FileSource`、`LocalFileSource`、`SmbFileSource`、`FileItem`、`FileHandle`。
 - D-pad：列表项和按钮可聚焦，焦点有明显视觉反馈，OK 打开，Back 返回。
+- 浏览模式：支持列表 / 网格切换，右侧快速预览当前焦点文件。
 - 状态：加载中、空目录、错误提示、刷新。
 - 图片：本地/SMB 图片预览；SMB 列表缩略图先缓存到 app cache 再交给 Coil。
+- 视频：本地/SMB 视频缩略图预览；SMB 视频缩略图 MVP 会先缓存文件。
 - 文本：UTF-8 预览，最多读取前 1MB，并提示截断。
-- 音频：Media3/ExoPlayer 播放；SMB 音频先缓存到 app cache。
+- 音频：封面预览；Media3/ExoPlayer 播放；SMB 音频先缓存到 app cache。
 
 ## 后续 TODO
 
@@ -41,6 +43,7 @@ AGP 9 已内置 Kotlin 支持，因此项目不再应用 `org.jetbrains.kotlin.a
 - 本地文件改为 SAF/MediaStore 优先，减少对传统外部存储权限的依赖。
 - 加收藏服务器、删除连接、复制/移动/删除文件。
 - 图片预览支持同目录左右切换。
+- 视频播放器接入 Media3。
 - 增加最小化单元测试或 instrumentation 冒烟测试。
 
 ## 参考

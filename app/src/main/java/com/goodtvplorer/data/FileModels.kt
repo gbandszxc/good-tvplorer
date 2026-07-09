@@ -1,6 +1,6 @@
 package com.goodtvplorer.data
 
-enum class FileKind { Directory, Image, Text, Audio, Other }
+enum class FileKind { Directory, Image, Text, Audio, Video, Other }
 
 enum class SourceKind { Local, Smb }
 

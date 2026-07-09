@@ -28,7 +28,10 @@ sealed interface Screen {
     data class ImagePreview(val sourceKey: String, val path: String, val name: String) : Screen
     data class TextPreview(val sourceKey: String, val path: String, val name: String) : Screen
     data class AudioPreview(val sourceKey: String, val path: String, val name: String) : Screen
+    data class VideoPreview(val sourceKey: String, val path: String, val name: String) : Screen
 }
+
+enum class BrowserViewMode { List, Grid }
 
 data class BrowserState(
     val loading: Boolean = false,
@@ -50,6 +53,7 @@ data class MainUiState(
     val browser: BrowserState = BrowserState(),
     val preview: PreviewState = PreviewState(),
     val thumbnails: Map<String, File> = emptyMap(),
+    val browserViewMode: BrowserViewMode = BrowserViewMode.Grid,
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -88,6 +92,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         openBrowser(screen.sourceKey, screen.path)
     }
 
+    fun toggleBrowserViewMode() {
+        _state.update {
+            it.copy(browserViewMode = if (it.browserViewMode == BrowserViewMode.Grid) BrowserViewMode.List else BrowserViewMode.Grid)
+        }
+    }
+
     fun openBrowser(sourceKey: String, path: String) {
         val source = sources[sourceKey] ?: return showError("文件源不存在")
         _state.update { it.copy(screen = Screen.Browser(sourceKey, path), browser = BrowserState(loading = true)) }
@@ -107,6 +117,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             FileKind.Image -> prepareImage(item.handle, item.name)
             FileKind.Text -> prepareText(item.handle, item.name)
             FileKind.Audio -> prepareAudio(item.handle, item.name)
+            FileKind.Video -> prepareVideo(item.handle, item.name)
             FileKind.Other -> showError("暂不支持打开此文件类型")
         }
     }
@@ -118,17 +129,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val parent = screen.path.trim('/').substringBeforeLast('/', "")
                 if (screen.path.isBlank()) openHome() else openBrowser(screen.sourceKey, parent)
             }
-            is Screen.ImagePreview, is Screen.TextPreview, is Screen.AudioPreview -> {
+            is Screen.ImagePreview, is Screen.TextPreview, is Screen.AudioPreview, is Screen.VideoPreview -> {
                 val current = when (screen) {
                     is Screen.ImagePreview -> screen.path
                     is Screen.TextPreview -> screen.path
                     is Screen.AudioPreview -> screen.path
+                    is Screen.VideoPreview -> screen.path
                 }
                 openBrowser(
                     sourceKey = when (screen) {
                         is Screen.ImagePreview -> screen.sourceKey
                         is Screen.TextPreview -> screen.sourceKey
                         is Screen.AudioPreview -> screen.sourceKey
+                        is Screen.VideoPreview -> screen.sourceKey
                     },
                     path = current.substringBeforeLast('/', ""),
                 )
@@ -137,12 +150,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun cacheThumbnails(source: FileSource, items: List<FileItem>) {
-        if (source.kind != SourceKind.Smb) return
-        items.filter { it.kind == FileKind.Image }.take(40).forEach { item ->
+        items.filter { it.kind == FileKind.Image || it.kind == FileKind.Audio || it.kind == FileKind.Video }.take(60).forEach { item ->
             viewModelScope.launch {
-                runCatching { thumbnails.imageFile(source, item.handle) }
+                runCatching { thumbnails.previewFile(source, item.handle, item.kind) }
                     .onSuccess { file ->
-                        _state.update { state -> state.copy(thumbnails = state.thumbnails + (thumbKey(item.handle) to file)) }
+                        if (file != null) _state.update { state -> state.copy(thumbnails = state.thumbnails + (thumbKey(item.handle) to file)) }
                     }
             }
         }
@@ -176,6 +188,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(screen = Screen.AudioPreview(handle.sourceKey, handle.path, name), preview = PreviewState(loading = true)) }
         viewModelScope.launch {
             runCatching { audioCache.cachedFile(source, handle) }
+                .onSuccess { file -> _state.update { it.copy(preview = PreviewState(file = file)) } }
+                .onFailure { e -> _state.update { it.copy(preview = PreviewState(error = readable(e))) } }
+        }
+    }
+
+    private fun prepareVideo(handle: FileHandle, name: String) {
+        val source = sources[handle.sourceKey] ?: return showError("文件源不存在")
+        _state.update { it.copy(screen = Screen.VideoPreview(handle.sourceKey, handle.path, name), preview = PreviewState(loading = true)) }
+        viewModelScope.launch {
+            runCatching { thumbnails.previewFile(source, handle, FileKind.Video) }
                 .onSuccess { file -> _state.update { it.copy(preview = PreviewState(file = file)) } }
                 .onFailure { e -> _state.update { it.copy(preview = PreviewState(error = readable(e))) } }
         }

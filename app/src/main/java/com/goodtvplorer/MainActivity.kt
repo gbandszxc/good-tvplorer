@@ -17,6 +17,7 @@ import com.goodtvplorer.ui.home.HomeScreen
 import com.goodtvplorer.ui.preview.AudioPreview
 import com.goodtvplorer.ui.preview.ImagePreview
 import com.goodtvplorer.ui.preview.TextPreview
+import com.goodtvplorer.ui.preview.VideoPreview
 import com.goodtvplorer.ui.theme.TvTheme
 import com.goodtvplorer.viewmodel.MainViewModel
 import com.goodtvplorer.viewmodel.Screen
@@ -50,13 +51,16 @@ class MainActivity : ComponentActivity() {
                         path = screen.path,
                         state = state.browser,
                         thumbnails = state.thumbnails,
+                        viewMode = state.browserViewMode,
                         onOpen = viewModel::openItem,
                         onBack = viewModel::goBack,
                         onRefresh = viewModel::refresh,
+                        onToggleView = viewModel::toggleBrowserViewMode,
                     )
                     is Screen.ImagePreview -> ImagePreview(screen.name, state.preview, viewModel::goBack)
                     is Screen.TextPreview -> TextPreview(screen.name, state.preview, viewModel::goBack)
                     is Screen.AudioPreview -> AudioPreview(screen.name, state.preview, viewModel::goBack)
+                    is Screen.VideoPreview -> VideoPreview(screen.name, state.preview, viewModel::goBack)
                 }
             }
         }

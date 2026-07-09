@@ -115,6 +115,23 @@ fun AudioPreview(name: String, state: PreviewState, onBack: () -> Unit) {
     }
 }
 
+@Composable
+fun VideoPreview(name: String, state: PreviewState, onBack: () -> Unit) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF05080D))) {
+        when {
+            state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+            state.error != null -> Text(state.error, color = Color(0xFFFFA3A3), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
+            state.file != null -> AsyncImage(model = state.file, contentDescription = name, modifier = Modifier.fillMaxSize().padding(48.dp), contentScale = ContentScale.Fit)
+            else -> Text("没有可用的视频缩略图", color = Color(0xFFC8D5E2), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
+        }
+        Column(Modifier.align(Alignment.TopStart).padding(28.dp)) {
+            Text(name, color = Color.White, fontSize = 26.sp, maxLines = 1)
+            Text("视频预览 · 播放器后续接入", color = Color(0xFFFFC857), fontSize = 18.sp)
+        }
+        TvButton("返回", modifier = Modifier.align(Alignment.TopEnd).padding(24.dp), onClick = onBack)
+    }
+}
+
 private fun format(ms: Long): String {
     val total = TimeUnit.MILLISECONDS.toSeconds(ms)
     return "%02d:%02d".format(total / 60, total % 60)
