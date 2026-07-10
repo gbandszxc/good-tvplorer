@@ -18,6 +18,13 @@ data class FileItem(
     val modifiedAtMillis: Long?,
 )
 
+fun FileItem.cacheKey(): String = listOf(
+    handle.sourceKey,
+    handle.path,
+    size?.toString().orEmpty(),
+    modifiedAtMillis?.toString().orEmpty(),
+).joinToString("|")
+
 data class SmbConnectionInfo(
     val id: String,
     val name: String,
