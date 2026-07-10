@@ -15,6 +15,7 @@ import com.goodtvplorer.data.SmbFileSource
 import com.goodtvplorer.data.SourceKind
 import com.goodtvplorer.data.cacheKey
 import com.goodtvplorer.domain.AudioCacheManager
+import com.goodtvplorer.domain.ImageModel
 import com.goodtvplorer.domain.ThumbnailRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineStart
@@ -49,6 +50,8 @@ data class BrowserState(
 data class PreviewState(
     val loading: Boolean = false,
     val file: File? = null,
+    val image: ImageModel? = null,
+    val placeholder: File? = null,
     val text: String = "",
     val truncated: Boolean = false,
     val error: String? = null,
@@ -210,13 +213,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun prepareImage(item: FileItem) {
         val source = sources[item.handle.sourceKey] ?: return showError("文件源不存在")
         cancelThumbnailRequests()
-        _state.update { it.copy(screen = Screen.ImagePreview(item.handle.sourceKey, item.handle.path, item.name), preview = PreviewState(loading = true)) }
-        viewModelScope.launch {
-            runCatching { thumbnails.thumbnailFile(source, item) }
-                .onSuccess { file -> _state.update { it.copy(preview = PreviewState(file = file)) } }
-            runCatching { thumbnails.imageFile(source, item.handle) }
-                .onSuccess { file -> _state.update { it.copy(preview = PreviewState(file = file)) } }
-                .onFailure { e -> _state.update { it.copy(preview = PreviewState(error = readable(e))) } }
+        _state.update {
+            it.copy(
+                screen = Screen.ImagePreview(item.handle.sourceKey, item.handle.path, item.name),
+                preview = PreviewState(
+                    image = ImageModel(source, item),
+                    placeholder = it.thumbnails[thumbKey(item)],
+                ),
+            )
         }
     }
 

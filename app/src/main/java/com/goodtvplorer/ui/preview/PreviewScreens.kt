@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -40,11 +41,34 @@ import java.util.concurrent.TimeUnit
 
 @Composable
 fun ImagePreview(name: String, state: PreviewState, onBack: () -> Unit) {
+    var loaded by remember(state.image) { mutableStateOf(false) }
+    var loadError by remember(state.image) { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         when {
             state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             state.error != null -> Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
-            state.file != null -> AsyncImage(model = state.file, contentDescription = name, modifier = Modifier.fillMaxSize().padding(36.dp), contentScale = ContentScale.Fit)
+            state.image != null -> {
+                if (!loaded && state.placeholder != null) {
+                    AsyncImage(model = state.placeholder, contentDescription = name, modifier = Modifier.fillMaxSize().padding(36.dp), contentScale = ContentScale.Fit)
+                }
+                if (!loaded && state.placeholder == null && loadError == null) {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                }
+                AsyncImage(
+                    model = state.image,
+                    contentDescription = name,
+                    modifier = Modifier.fillMaxSize().padding(36.dp).alpha(if (loaded) 1f else 0f),
+                    contentScale = ContentScale.Fit,
+                    onSuccess = {
+                        loaded = true
+                        loadError = null
+                    },
+                    onError = { loadError = "图片加载失败，请检查 NAS 连接后重试。" },
+                )
+                loadError?.let {
+                    Text(it, color = Color(0xFFFCA5A5), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
+                }
+            }
         }
         Text(name, color = Color.White, fontSize = 24.sp, modifier = Modifier.align(Alignment.TopStart).padding(28.dp))
         TvButton("返回", modifier = Modifier.align(Alignment.TopEnd).padding(24.dp), onClick = onBack)

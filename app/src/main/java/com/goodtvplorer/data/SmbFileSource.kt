@@ -19,6 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.util.EnumSet
@@ -79,7 +80,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         withOpenFile(path) { file ->
             val buffer = ByteArray(maxBytes)
             var total = 0
-            val chunkSize = synchronized(lock) { connection?.negotiatedProtocol?.maxReadSize } ?: 64 * 1024
+            val chunkSize = readBufferSize()
             while (total < maxBytes) {
                 val requested = minOf(maxBytes - total, chunkSize)
                 val read = file.read(buffer, offset + total, total, requested)
@@ -92,7 +93,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
     }
 
     override suspend fun openStream(path: String): InputStream = withContext(Dispatchers.IO) {
-        SmbInputStream(path)
+        BufferedInputStream(SmbInputStream(path), readBufferSize())
     }
 
     override suspend fun copyTo(path: String, target: File) = withContext(Dispatchers.IO) {
@@ -100,7 +101,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         val parent = requireNotNull(target.parentFile) { "缓存文件缺少父目录" }.also { it.mkdirs() }
         val partial = File(parent, ".${target.name}.${UUID.randomUUID()}.part")
         try {
-            SmbInputStream(path).use { input -> partial.outputStream().use(input::copyTo) }
+            openStream(path).use { input -> partial.outputStream().use(input::copyTo) }
             if (target.exists() && target.length() > 0L) return@withContext
             check(partial.renameTo(target)) { "无法提交缓存文件：${target.name}" }
         } finally {
@@ -162,6 +163,10 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
     }
 
     private fun invalidate() = synchronized(lock) { closeLocked() }
+
+    private fun readBufferSize(): Int = synchronized(lock) {
+        (connection?.negotiatedProtocol?.maxReadSize ?: 64 * 1024).coerceIn(64 * 1024, 1024 * 1024)
+    }
 
     private fun closeLocked() {
         runCatching { share?.close() }

@@ -41,22 +41,11 @@ class ThumbnailRepository internal constructor(
         null
     }
 
-    suspend fun imageFile(source: FileSource, handle: FileHandle): File = withContext(Dispatchers.IO) {
-        val ext = handle.path.substringAfterLast('.', "img")
-        val file = File(cacheDir, "images/${hash(handle.sourceKey + "|" + handle.path)}.$ext")
-        if (!file.exists() || file.length() == 0L) {
-            // TODO: 当前为可工作的 SMB 图片缓存；后续接入 Coil Fetcher 以真正流式解码缩略图。
-            source.copyTo(handle.path, file)
-        }
-        file
-    }
-
     suspend fun previewFile(source: FileSource, handle: FileHandle, kind: FileKind): File? = withContext(Dispatchers.IO) {
         when (kind) {
-            FileKind.Image -> imageFile(source, handle)
             FileKind.Audio -> audioCover(source, handle)
             FileKind.Video -> videoFrame(source, handle)
-            else -> null
+            FileKind.Directory, FileKind.Image, FileKind.Text, FileKind.Other -> null
         }
     }
 

@@ -18,6 +18,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import com.goodtvplorer.domain.FileSourceImageFetcher
+import com.goodtvplorer.domain.ImageModelKeyer
 import com.goodtvplorer.ui.browser.BrowserScreen
 import com.goodtvplorer.ui.components.DisplaySettingsDialog
 import com.goodtvplorer.ui.home.HomeScreen
@@ -34,6 +38,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SingletonImageLoader.setSafe { context ->
+            ImageLoader.Builder(context).components {
+                add(ImageModelKeyer())
+                add(FileSourceImageFetcher.Factory())
+            }.build()
+        }
         setContent {
             TvTheme {
                 val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
