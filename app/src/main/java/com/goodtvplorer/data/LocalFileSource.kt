@@ -52,8 +52,7 @@ class LocalFileSource(private val context: Context) : FileSource {
         val partial = File(parent, ".${target.name}.${UUID.randomUUID()}.part")
         try {
             File(path).inputStream().use { input -> partial.outputStream().use(input::copyTo) }
-            if (target.exists() && target.length() > 0L) return@withContext
-            check(partial.renameTo(target)) { "无法提交缓存文件：${target.name}" }
+            check(commitCacheFile(partial, target)) { "无法提交缓存文件：${target.name}" }
         } finally {
             partial.delete()
         }

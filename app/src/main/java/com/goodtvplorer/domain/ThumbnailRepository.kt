@@ -12,6 +12,7 @@ import com.goodtvplorer.data.FileItem
 import com.goodtvplorer.data.FileKind
 import com.goodtvplorer.data.FileSource
 import com.goodtvplorer.data.cacheKey
+import com.goodtvplorer.data.commitCacheFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -102,7 +103,7 @@ class ThumbnailRepository internal constructor(
             when {
                 !compressed -> null
                 file.exists() && file.length() > 0L -> file
-                partial.renameTo(file) -> file
+                commitCacheFile(partial, file) -> file
                 else -> null
             }
         } finally {

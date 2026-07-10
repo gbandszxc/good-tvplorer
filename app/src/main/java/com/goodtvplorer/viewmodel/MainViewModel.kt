@@ -18,7 +18,8 @@ import com.goodtvplorer.domain.AudioCacheManager
 import com.goodtvplorer.domain.ImageModel
 import com.goodtvplorer.domain.ThumbnailRepository
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +29,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.coroutines.EmptyCoroutineContext
 
 sealed interface Screen {
     data object Home : Screen
@@ -74,19 +77,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val thumbnails = ThumbnailRepository(app)
     private val audioCache = AudioCacheManager(app)
     private val sources = mutableMapOf<String, FileSource>(local.key to local)
-    private val thumbnailRequests = mutableMapOf<String, ThumbnailRequest>()
+    private val thumbnailRequests = RefCountedRequestRegistry(viewModelScope)
     private val thumbnailSemaphore = Semaphore(3)
     private val pendingThumbnails = mutableMapOf<String, File>()
     private var thumbnailBatchJob: Job? = null
+    private var browserJob: Job? = null
+    private var previewJob: Job? = null
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
     init {
         viewModelScope.launch {
             store.connections.collectLatest { connections ->
+                browserJob?.cancel()
+                previewJob?.cancel()
                 cancelThumbnailRequests()
-                sources.values.filterIsInstance<SmbFileSource>().forEach(SmbFileSource::close)
+                val oldSources = sources.values.filterIsInstance<SmbFileSource>()
                 sources.keys.filter { it.startsWith("smb:") }.forEach { sources.remove(it) }
+                withContext(Dispatchers.IO) { oldSources.forEach(SmbFileSource::close) }
                 connections.forEach { info -> sources["smb:${info.id}"] = SmbFileSource(info) }
                 _state.update { it.copy(smbConnections = connections) }
             }
@@ -99,6 +107,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openHome() {
+        browserJob?.cancel()
+        previewJob?.cancel()
         cancelThumbnailRequests()
         _state.update { it.copy(screen = Screen.Home, preview = PreviewState()) }
     }
@@ -128,14 +138,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openBrowser(sourceKey: String, path: String) {
         val source = sources[sourceKey] ?: return showError("文件源不存在")
+        browserJob?.cancel()
+        previewJob?.cancel()
         cancelThumbnailRequests()
         _state.update { it.copy(screen = Screen.Browser(sourceKey, path), browser = BrowserState(loading = true)) }
-        viewModelScope.launch {
-            runCatching { source.list(path) }
-                .onSuccess { items ->
-                    _state.update { it.copy(browser = BrowserState(items = items)) }
+        browserJob = viewModelScope.launch {
+            try {
+                val items = source.list(path)
+                if (_state.value.screen == Screen.Browser(sourceKey, path)) {
+                    val thumbnailKeys = items.asSequence().filter { it.kind == FileKind.Image }.map(::thumbKey).toSet()
+                    _state.update {
+                        it.copy(
+                            browser = BrowserState(items = items),
+                            thumbnails = it.thumbnails.filterKeys(thumbnailKeys::contains),
+                        )
+                    }
                 }
-                .onFailure { e -> _state.update { it.copy(browser = BrowserState(error = readable(e))) } }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (_state.value.screen == Screen.Browser(sourceKey, path)) {
+                    _state.update { it.copy(browser = BrowserState(error = readable(error))) }
+                }
+            }
         }
     }
 
@@ -154,33 +179,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (item.kind != FileKind.Image) return
         val key = thumbKey(item)
         if (_state.value.thumbnails.containsKey(key) || pendingThumbnails.containsKey(key)) return
-        thumbnailRequests[key]?.let {
-            it.references++
-            return
-        }
         val source = sources[item.handle.sourceKey] ?: return
-        lateinit var request: ThumbnailRequest
-        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            try {
-                thumbnailSemaphore.withPermit { thumbnails.thumbnailFile(source, item) }
-                    ?.let { queueThumbnail(key, it) }
-            } finally {
-                if (thumbnailRequests[key] === request) thumbnailRequests.remove(key)
-            }
+        thumbnailRequests.request(key) {
+            thumbnailSemaphore.withPermit { thumbnails.thumbnailFile(source, item) }
+                ?.let { queueThumbnail(key, it) }
         }
-        request = ThumbnailRequest(job)
-        thumbnailRequests[key] = request
-        job.start()
     }
 
     fun releaseThumbnail(item: FileItem) {
-        val key = thumbKey(item)
-        val request = thumbnailRequests[key] ?: return
-        request.references--
-        if (request.references <= 0) {
-            thumbnailRequests.remove(key)
-            request.job.cancel()
-        }
+        thumbnailRequests.release(thumbKey(item))
     }
 
     fun goBack() {
@@ -212,6 +219,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun prepareImage(item: FileItem) {
         val source = sources[item.handle.sourceKey] ?: return showError("文件源不存在")
+        previewJob?.cancel()
         cancelThumbnailRequests()
         _state.update {
             it.copy(
@@ -226,34 +234,53 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun prepareText(handle: FileHandle, name: String) {
         val source = sources[handle.sourceKey] ?: return showError("文件源不存在")
-        _state.update { it.copy(screen = Screen.TextPreview(handle.sourceKey, handle.path, name), preview = PreviewState(loading = true)) }
-        viewModelScope.launch {
-            runCatching {
+        val screen = Screen.TextPreview(handle.sourceKey, handle.path, name)
+        previewJob?.cancel()
+        _state.update { it.copy(screen = screen, preview = PreviewState(loading = true)) }
+        previewJob = viewModelScope.launch {
+            try {
                 val bytes = source.readPrefix(handle.path, 1024 * 1024 + 1)
-                PreviewState(text = bytes.take(1024 * 1024).toByteArray().toString(Charsets.UTF_8), truncated = bytes.size > 1024 * 1024)
+                val preview = PreviewState(text = bytes.take(1024 * 1024).toByteArray().toString(Charsets.UTF_8), truncated = bytes.size > 1024 * 1024)
+                if (_state.value.screen == screen) _state.update { it.copy(preview = preview) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(error = readable(error))) }
             }
-                .onSuccess { preview -> _state.update { it.copy(preview = preview) } }
-                .onFailure { e -> _state.update { it.copy(preview = PreviewState(error = readable(e))) } }
         }
     }
 
     private fun prepareAudio(handle: FileHandle, name: String) {
         val source = sources[handle.sourceKey] ?: return showError("文件源不存在")
-        _state.update { it.copy(screen = Screen.AudioPreview(handle.sourceKey, handle.path, name), preview = PreviewState(loading = true)) }
-        viewModelScope.launch {
-            runCatching { audioCache.cachedFile(source, handle) }
-                .onSuccess { file -> _state.update { it.copy(preview = PreviewState(file = file)) } }
-                .onFailure { e -> _state.update { it.copy(preview = PreviewState(error = readable(e))) } }
+        val screen = Screen.AudioPreview(handle.sourceKey, handle.path, name)
+        previewJob?.cancel()
+        _state.update { it.copy(screen = screen, preview = PreviewState(loading = true)) }
+        previewJob = viewModelScope.launch {
+            try {
+                val file = audioCache.cachedFile(source, handle)
+                if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(file = file)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(error = readable(error))) }
+            }
         }
     }
 
     private fun prepareVideo(handle: FileHandle, name: String) {
         val source = sources[handle.sourceKey] ?: return showError("文件源不存在")
-        _state.update { it.copy(screen = Screen.VideoPreview(handle.sourceKey, handle.path, name), preview = PreviewState(loading = true)) }
-        viewModelScope.launch {
-            runCatching { thumbnails.previewFile(source, handle, FileKind.Video) }
-                .onSuccess { file -> _state.update { it.copy(preview = PreviewState(file = file)) } }
-                .onFailure { e -> _state.update { it.copy(preview = PreviewState(error = readable(e))) } }
+        val screen = Screen.VideoPreview(handle.sourceKey, handle.path, name)
+        previewJob?.cancel()
+        _state.update { it.copy(screen = screen, preview = PreviewState(loading = true)) }
+        previewJob = viewModelScope.launch {
+            try {
+                val file = thumbnails.previewFile(source, handle, FileKind.Video)
+                if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(file = file)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(error = readable(error))) }
+            }
         }
     }
 
@@ -275,16 +302,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun cancelThumbnailRequests() {
-        thumbnailRequests.values.forEach { it.job.cancel() }
-        thumbnailRequests.clear()
+        thumbnailRequests.cancelAll()
         thumbnailBatchJob?.cancel()
         thumbnailBatchJob = null
         pendingThumbnails.clear()
     }
 
     override fun onCleared() {
+        browserJob?.cancel()
+        previewJob?.cancel()
         cancelThumbnailRequests()
-        sources.values.filterIsInstance<SmbFileSource>().forEach(SmbFileSource::close)
+        val oldSources = sources.values.filterIsInstance<SmbFileSource>()
+        Dispatchers.IO.dispatch(EmptyCoroutineContext) { oldSources.forEach(SmbFileSource::close) }
         super.onCleared()
     }
 
@@ -292,5 +321,4 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         fun thumbKey(item: FileItem): String = item.cacheKey()
     }
 
-    private data class ThumbnailRequest(val job: Job, var references: Int = 1)
 }
