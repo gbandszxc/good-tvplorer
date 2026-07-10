@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
                             onRefresh = viewModel::refresh,
                             onToggleView = viewModel::toggleBrowserViewMode,
                             onDisplaySettings = { showDisplaySettings = true },
+                            onThumbnailVisible = viewModel::requestThumbnail,
+                            onThumbnailHidden = viewModel::releaseThumbnail,
                         )
                         is Screen.ImagePreview -> ImagePreview(screen.name, state.preview, viewModel::goBack)
                         is Screen.TextPreview -> TextPreview(screen.name, state.preview, viewModel::goBack)

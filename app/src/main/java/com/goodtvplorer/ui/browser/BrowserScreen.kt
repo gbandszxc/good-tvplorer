@@ -28,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,8 @@ fun BrowserScreen(
     onRefresh: () -> Unit,
     onToggleView: () -> Unit,
     onDisplaySettings: () -> Unit,
+    onThumbnailVisible: (FileItem) -> Unit,
+    onThumbnailHidden: (FileItem) -> Unit,
 ) {
     var focusedItem by remember(state.items) { mutableStateOf<FileItem?>(state.items.firstOrNull()) }
     val preview = focusedItem ?: state.items.firstOrNull()
@@ -78,17 +81,17 @@ fun BrowserScreen(
                     state.items.isEmpty() -> MessagePanel("目录为空", "Back 返回上级，或刷新当前目录。", Color(0xFFC8D5E2))
                     viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(state.items, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileRow(item, thumbnails[MainViewModel.thumbKey(item.handle)], onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                     else -> LazyVerticalGrid(columns = GridCells.Adaptive(180.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(state.items, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileTile(item, thumbnails[MainViewModel.thumbKey(item.handle)], onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                 }
             }
-            PreviewPanel(preview, preview?.let { thumbnails[MainViewModel.thumbKey(it.handle)] })
+            PreviewPanel(preview, preview?.let { thumbnails[MainViewModel.thumbKey(it)] }, onThumbnailVisible, onThumbnailHidden)
         }
     }
 }
@@ -125,10 +128,10 @@ private fun SourceRail() {
 }
 
 @Composable
-private fun FileRow(item: FileItem, thumbnail: File?, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, onFocus: () -> Unit, onClick: () -> Unit) {
     FocusSurface(Modifier.fillMaxWidth(), onFocus, onClick) { focused ->
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            MediaThumb(item, thumbnail, Modifier.size(78.dp))
+            MediaThumb(item, thumbnail, Modifier.size(78.dp), onThumbnailVisible, onThumbnailHidden)
             Column(Modifier.weight(1f)) {
                 Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text(meta(item), color = if (focused) Color(0xFF4C3B12) else Color(0xFFA8B8C7), fontSize = 17.sp, maxLines = 1)
@@ -139,10 +142,10 @@ private fun FileRow(item: FileItem, thumbnail: File?, onFocus: () -> Unit, onCli
 }
 
 @Composable
-private fun FileTile(item: FileItem, thumbnail: File?, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun FileTile(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, onFocus: () -> Unit, onClick: () -> Unit) {
     FocusSurface(Modifier.fillMaxWidth(), onFocus, onClick) { focused ->
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 10f))
+            MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 10f), onThumbnailVisible, onThumbnailHidden)
             Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
         }
     }
@@ -169,7 +172,7 @@ private fun FocusSurface(modifier: Modifier, onFocus: () -> Unit, onClick: () ->
 }
 
 @Composable
-private fun PreviewPanel(item: FileItem?, thumbnail: File?) {
+private fun PreviewPanel(item: FileItem?, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit) {
     Column(Modifier.width(260.dp).fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(Color(0xFF101A26)).padding(16.dp)) {
         Text("快速预览", color = Color(0xFF7CC7D8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(14.dp))
@@ -177,7 +180,7 @@ private fun PreviewPanel(item: FileItem?, thumbnail: File?) {
             Text("选择文件后显示预览。", color = Color(0xFFA8B8C7), fontSize = 18.sp)
             return@Column
         }
-        MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 11f))
+        MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 11f), onThumbnailVisible, onThumbnailHidden)
         Spacer(Modifier.height(16.dp))
         Text(item.name, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
         Spacer(Modifier.height(8.dp))
@@ -187,8 +190,13 @@ private fun PreviewPanel(item: FileItem?, thumbnail: File?) {
 }
 
 @Composable
-private fun MediaThumb(item: FileItem, thumbnail: File?, modifier: Modifier) {
-    val model: Any? = thumbnail ?: if (item.kind == FileKind.Image) item.handle.path else null
+private fun MediaThumb(item: FileItem, thumbnail: File?, modifier: Modifier, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit) {
+    DisposableEffect(item, thumbnail) {
+        val requested = item.kind == FileKind.Image && thumbnail == null
+        if (requested) onThumbnailVisible(item)
+        onDispose { if (requested) onThumbnailHidden(item) }
+    }
+    val model: Any? = thumbnail
     Box(modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
         if (model != null) {
             AsyncImage(model = model, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
