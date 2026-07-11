@@ -5,6 +5,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 val keystorePropertiesFile = rootProject.file("key.properties")
@@ -64,6 +65,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.room:room-runtime:2.8.3")
+    implementation("androidx.room:room-ktx:2.8.3")
+    ksp("androidx.room:room-compiler:2.8.3")
     implementation("androidx.datastore:datastore-preferences:1.2.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
@@ -73,4 +77,8 @@ dependencies {
     implementation("com.hierynomus:smbj:0.14.0")
     testImplementation(kotlin("test-junit"))
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
