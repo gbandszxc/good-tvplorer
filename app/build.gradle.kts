@@ -16,11 +16,11 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.goodtvplorer"
+    namespace = "com.github.gbandszxc.goodtvplorer"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.goodtvplorer"
+        applicationId = "com.github.gbandszxc.goodtvplorer"
         minSdk = 23
         targetSdk = 36
         versionCode = 1

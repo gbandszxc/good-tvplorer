@@ -107,8 +107,8 @@
 # ADB 常用
 adb devices
 adb logcat -s SmbFileSource:D MainViewModel:D  # 查看 SMB 与 ViewModel 日志
-adb shell pm clear com.goodtvplorer           # 清空应用数据
-adb uninstall com.goodtvplorer                # 卸载
+adb shell pm clear com.github.gbandszxc.goodtvplorer           # 清空应用数据
+adb uninstall com.github.gbandszxc.goodtvplorer                # 卸载
 ```
 
 > 提示：Windows 终端使用 PowerShell 时，反斜杠可省略为 `.\gradlew.bat`；若使用 Git Bash，可改用 `./gradlew`。
@@ -118,7 +118,7 @@ adb uninstall com.goodtvplorer                # 卸载
 ```text
 .
 ├── app/
-│   ├── src/main/java/com/goodtvplorer/
+│   ├── src/main/java/com/github/gbandszxc/goodtvplorer/
 │   │   ├── data/            # 文件源抽象、本地/SMB 实现、数据模型
 │   │   │   └── persistence/ # Room 数据库、DAO 与统一存储仓库
 │   │   ├── domain/          # 缩略图、缓存、文件类型识别、自定义 Coil Fetcher

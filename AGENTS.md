@@ -5,7 +5,7 @@
 
 ## 统一持久化约束
 
-1. 所有需要跨进程、重启或页面重建保存的业务状态，必须使用 `app/src/main/java/com/goodtvplorer/data/persistence/` 中的 Room / SQLite 公共存储层。
+1. 所有需要跨进程、重启或页面重建保存的业务状态，必须使用 `app/src/main/java/com/github/gbandszxc/goodtvplorer/data/persistence/` 中的 Room / SQLite 公共存储层。
 2. 新增持久化功能时，必须同时补齐 Entity、DAO、Repository、测试、`docs/architecture.md` 的“统一持久化”章节；必要时更新 README。
 3. UI、Activity、ViewModel、domain 层不得直接访问 Room DAO、SQLite、DataStore、SharedPreferences 或自行读写配置文件；只能调用 Repository。
 4. 不得新增 DataStore、SharedPreferences 或临时文件配置作为业务状态存储。缓存文件仍可使用 `cacheDir`，但不得承担配置、连接或导航恢复职责。
