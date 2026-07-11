@@ -249,7 +249,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val navigation = BrowserNavigationRepository(app)
     private val thumbnails = ThumbnailRepository(app)
     private val audioCache = AudioCacheManager(app)
-    private val previewMetadata = PreviewMetadataRepository(thumbnails, audioCache)
+    private val previewMetadata = PreviewMetadataRepository()
     private val sources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailSources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailRequests = RefCountedRequestRegistry(viewModelScope)

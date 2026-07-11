@@ -77,10 +77,6 @@ class ThumbnailRepository internal constructor(
         }
     }
 
-    suspend fun cachedMediaFile(source: FileSource, handle: FileHandle): File = withContext(Dispatchers.IO) {
-        mediaCache(source, handle)
-    }
-
     private suspend fun mediaCache(source: FileSource, handle: FileHandle): File {
         val ext = handle.path.substringAfterLast('.', "bin")
         val file = File(cacheDir, "media-preview/${hash(handle.sourceKey + "|" + handle.path)}.$ext")
