@@ -75,6 +75,7 @@ import com.goodtvplorer.domain.Formatters
 import com.goodtvplorer.ui.components.TvButton
 import com.goodtvplorer.ui.components.tvOkClick
 import com.goodtvplorer.viewmodel.BrowserState
+import com.goodtvplorer.viewmodel.BrowserPreviewMetadataState
 import com.goodtvplorer.viewmodel.BrowserSort
 import com.goodtvplorer.viewmodel.BrowserSortField
 import com.goodtvplorer.viewmodel.BrowserViewMode
@@ -93,12 +94,14 @@ fun BrowserScreen(
     searchQuery: String,
     searchItems: List<FileItem>?,
     searchLoading: Boolean,
+    previewMetadata: BrowserPreviewMetadataState,
     focusAnchorPath: String?,
     onOpen: (FileItem) -> Unit,
     onNavigateUp: () -> Unit,
     onOpenPath: (String) -> Unit,
     onSortChange: (BrowserSort) -> Unit,
     onSearchQueryChange: (String) -> Unit,
+    onPreviewMetadataRequest: (FileItem) -> Unit,
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
@@ -117,6 +120,9 @@ fun BrowserScreen(
     }
     val preview = focusedItem ?: visibleItems.firstOrNull()
     val focusNavigateUp = !state.loading && state.error == null && state.items.isEmpty() && !searchHasFocus
+    LaunchedEffect(preview?.handle?.sourceKey, preview?.handle?.path) {
+        preview?.let(onPreviewMetadataRequest)
+    }
 
     Column(Modifier.fillMaxSize()) {
         BrowserToolbar(
@@ -165,7 +171,7 @@ fun BrowserScreen(
                     }
                 }
             }
-            PreviewPanel(preview, preview?.let { thumbnails[MainViewModel.thumbKey(it)] }, onThumbnailVisible, onThumbnailHidden)
+            PreviewPanel(preview, preview?.let { thumbnails[MainViewModel.thumbKey(it)] }, previewMetadata, onThumbnailVisible, onThumbnailHidden)
         }
     }
 }
@@ -470,7 +476,7 @@ private fun FocusSurface(modifier: Modifier, initiallyFocused: Boolean, onFocus:
 }
 
 @Composable
-private fun PreviewPanel(item: FileItem?, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit) {
+private fun PreviewPanel(item: FileItem?, thumbnail: File?, metadata: BrowserPreviewMetadataState, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit) {
     Column(Modifier.width(260.dp).fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(Color(0xFF101A26)).padding(16.dp)) {
         Text("快速预览", color = Color(0xFF7CC7D8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(14.dp))
@@ -484,6 +490,19 @@ private fun PreviewPanel(item: FileItem?, thumbnail: File?, onThumbnailVisible: 
         Spacer(Modifier.height(8.dp))
         Text(kindLabel(item.kind), color = Color(0xFFFFC857), fontSize = 18.sp)
         Text(meta(item), color = Color(0xFFA8B8C7), fontSize = 16.sp)
+        val metadataMatchesItem = metadata.itemKey == MainViewModel.thumbKey(item)
+        if (metadataMatchesItem && metadata.loading) {
+            Spacer(Modifier.height(12.dp))
+            Text("正在读取媒体信息…", color = Color(0xFF728397), fontSize = 16.sp)
+        } else if (metadataMatchesItem && metadata.metadata.entries.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            metadata.metadata.entries.forEach { entry ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(entry.label, modifier = Modifier.width(52.dp), color = Color(0xFF7CC7D8), fontSize = 16.sp)
+                    Text(entry.value, modifier = Modifier.weight(1f), color = Color(0xFFC8D5E2), fontSize = 16.sp, maxLines = 2)
+                }
+            }
+        }
     }
 }
 

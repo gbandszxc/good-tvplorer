@@ -17,6 +17,8 @@ import com.goodtvplorer.data.persistence.DisplaySettingsRepository
 import com.goodtvplorer.data.persistence.SmbConnectionRepository
 import com.goodtvplorer.domain.AudioCacheManager
 import com.goodtvplorer.domain.ImageModel
+import com.goodtvplorer.domain.PreviewMetadata
+import com.goodtvplorer.domain.PreviewMetadataRepository
 import com.goodtvplorer.domain.ThumbnailRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -80,6 +82,12 @@ data class PreviewState(
     val error: String? = null,
 )
 
+data class BrowserPreviewMetadataState(
+    val itemKey: String? = null,
+    val loading: Boolean = false,
+    val metadata: PreviewMetadata = PreviewMetadata(),
+)
+
 data class MainUiState(
     val screen: Screen = Screen.Browser("local", ""),
     val smbConnections: List<SmbConnectionInfo> = emptyList(),
@@ -92,6 +100,7 @@ data class MainUiState(
     val browserSearchQuery: String = "",
     val browserSearchItems: List<FileItem>? = null,
     val browserSearchLoading: Boolean = false,
+    val browserPreviewMetadata: BrowserPreviewMetadataState = BrowserPreviewMetadataState(),
     val fontScale: Float = 1f,
 )
 
@@ -240,6 +249,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val navigation = BrowserNavigationRepository(app)
     private val thumbnails = ThumbnailRepository(app)
     private val audioCache = AudioCacheManager(app)
+    private val previewMetadata = PreviewMetadataRepository(thumbnails, audioCache)
     private val sources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailSources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailRequests = RefCountedRequestRegistry(viewModelScope)
@@ -249,6 +259,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var thumbnailBatchJob: Job? = null
     private var browserJob: Job? = null
     private var searchJob: Job? = null
+    private var browserMetadataJob: Job? = null
     private var previewJob: Job? = null
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
@@ -341,6 +352,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         startBrowserSearch(screen, source, _state.value.browser.items, query)
     }
 
+    fun requestBrowserPreviewMetadata(item: FileItem) {
+        val key = thumbKey(item)
+        if (_state.value.browserPreviewMetadata.itemKey == key) return
+        browserMetadataJob?.cancel()
+        if (item.kind !in setOf(FileKind.Image, FileKind.Audio, FileKind.Video)) {
+            _state.update { it.copy(browserPreviewMetadata = BrowserPreviewMetadataState(itemKey = key)) }
+            return
+        }
+        val source = sources[item.handle.sourceKey] ?: return
+        _state.update { it.copy(browserPreviewMetadata = BrowserPreviewMetadataState(itemKey = key, loading = true)) }
+        browserMetadataJob = viewModelScope.launch {
+            try {
+                val metadata = previewMetadata.read(source, item)
+                if (_state.value.browserPreviewMetadata.itemKey == key) {
+                    _state.update { it.copy(browserPreviewMetadata = BrowserPreviewMetadataState(itemKey = key, metadata = metadata)) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (_state.value.browserPreviewMetadata.itemKey == key) {
+                    _state.update { it.copy(browserPreviewMetadata = BrowserPreviewMetadataState(itemKey = key)) }
+                }
+            }
+        }
+    }
+
     private fun startBrowserSearch(
         screen: Screen.Browser,
         source: FileSource,
@@ -375,6 +412,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         navigation.recordLocation(sourceKey, path, System.currentTimeMillis())
         browserJob?.cancel()
         searchJob?.cancel()
+        browserMetadataJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()
         if (forceRefresh) browserCache.remove(screen)
@@ -387,6 +425,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     browserSearchQuery = if (clearSearch) "" else it.browserSearchQuery,
                     browserSearchItems = if (clearSearch) null else it.browserSearchItems,
                     browserSearchLoading = if (clearSearch) false else it.browserSearchLoading,
+                    browserPreviewMetadata = BrowserPreviewMetadataState(),
                 )
             }
             return
@@ -399,6 +438,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 browserSearchQuery = if (clearSearch) "" else it.browserSearchQuery,
                 browserSearchItems = if (clearSearch) null else it.browserSearchItems,
                 browserSearchLoading = if (clearSearch) false else it.browserSearchLoading,
+                browserPreviewMetadata = BrowserPreviewMetadataState(),
             )
         }
         browserJob = viewModelScope.launch {
