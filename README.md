@@ -1,53 +1,171 @@
 # Good TVplorer
 
-Android TV 文件管理器 MVP，使用 Kotlin、Gradle Kotlin DSL、Jetpack Compose、SMBJ、Coil、Media3。
+为 Android TV 与电视遥控器设计的文件管理器，同时浏览**本地存储**与 **SMB / NAS** 媒体库。
 
-## 构建配置
+![Kotlin](https://img.shields.io/badge/Kotlin-2.3.10-7F52FF?logo=kotlin)
+![AGP](https://img.shields.io/badge/AGP-9.2.1-3DDC84?logo=android)
+![minSdk](https://img.shields.io/badge/minSdk-23-3DDC84)
+![targetSdk](https://img.shields.io/badge/targetSdk-36-3DDC84)
 
-- JDK：`C:\D\Develop\Java\jdk-17.0.16+8`
-- Gradle：Wrapper `9.4.1`
-- AGP：`9.2.1`
-- `compileSdk` / `targetSdk`：`36`
-- `minSdk`：`23`
+> ⚠️ **安全提示**：当前版本为 MVP，SMB 密码以明文存储在 DataStore Preferences 中。请勿在不可信设备上保存重要凭据，加密方案已列入后续计划。
 
-AGP 9 已内置 Kotlin 支持，因此项目不再应用 `org.jetbrains.kotlin.android`，只保留 Compose Compiler 插件。
+---
 
-## 运行
+## 功能特性
+
+- **Android TV 原生体验**：Leanback 启动器入口、D-pad 焦点导航、OK 打开 / Back 返回。
+- **本地 + SMB 统一浏览**：同一套界面同时浏览 Android 本地目录与 SMB / NAS 共享。
+- **SMB 性能优化**：连接复用、空闲重连、单次重试、≥4MB 大文件流水线读取。
+- **媒体预览**：图片、视频缩略图、音频封面与播放、文本预览（UTF-8，最多 1MB）。
+- **列表 / 网格双模式**：右侧实时预览当前焦点文件。
+- **现代 Android 技术栈**：Kotlin + Jetpack Compose + Material3 + Media3 + Coil3。
+
+## 界面示意
+
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│  Good TVplorer          媒体入口 / 下载                             │
+├──────────┬──────────────────────────────────────────┬───────────────┤
+│          │                                            │   快速预览    │
+│  本地文件 │   [IMG] vacation.jpg        [VID] demo.mp4 │   ┌───────┐   │
+│  添加 SMB │   [DIR] documents           [AUD] song.flac│   │ 缩略图 │   │
+│  显示设置 │                                            │   └───────┘   │
+│          │   列表 / 网格    刷新    显示    返回       │  vacation.jpg │
+│          │                                            │    图片       │
+│ OK 打开  │                                            │  2.3 MB       │
+│ Back 返回 │                                            │               │
+└──────────┴──────────────────────────────────────────┴───────────────┘
+```
+
+> 实际截图待补充。当前 UI 包含深色主题首页、文件浏览器（列表/网格）、右侧快速预览面板。
+
+## 快速开始
+
+### 支持的设备
+
+- **推荐**：Android TV、电视盒子、投影等带遥控器的大屏设备（`LEANBACK_LAUNCHER` 入口）。
+- **可运行**：普通 Android 手机/平板（`minSdk = 23`），但 UI 为 D-pad / 遥控器优化，触屏操作不便。
+- **模拟器**：Android TV 模拟器或普通 Android 模拟器均可。
+- **CPU 架构**：`armeabi-v7a`、`arm64-v8a`。
+
+### 环境要求
+
+- JDK 17
+- Android SDK API 36
+- 一台已开启开发者选项并连接好的设备/模拟器
+
+### 配置 JDK 路径
+
+项目 `gradle.properties` 中写死了作者本机路径。若你本地 JDK 17 路径不同，请修改为对应目录（需包含 `bin/java.exe`），然后重新同步 Gradle。
+
+### 构建与安装
 
 ```powershell
+# 调试构建
 .\gradlew.bat :app:assembleDebug
+
+# 安装到已连接设备
 .\gradlew.bat :app:installDebug
 ```
 
-也可以用 Android Studio 打开本目录，在 Android TV 模拟器或真机上运行 `app`。
+也可以直接用 Android Studio 打开项目目录，在 Android TV 模拟器或真机上运行 `app`。
 
-## MVP 已实现
+### 运行后
 
-- 首页：本地文件、添加 SMB、已保存 SMB 连接入口。
-- 本地文件：从 App files、Download、Movies、Pictures、Music 开始浏览。
-- SMB：手动保存名称、Host、Port、Share、用户名、密码、Domain，并浏览共享目录。
-- 统一文件源接口：`FileSource`、`LocalFileSource`、`SmbFileSource`、`FileItem`、`FileHandle`。
-- D-pad：列表项和按钮可聚焦，焦点有明显视觉反馈，OK 打开，Back 返回。
-- 浏览模式：支持列表 / 网格切换，右侧快速预览当前焦点文件。
-- 状态：加载中、空目录、错误提示、刷新。
-- 图片：本地/SMB 图片预览；SMB 列表缩略图先缓存到 app cache 再交给 Coil。
-- 视频：本地/SMB 视频缩略图预览；SMB 视频缩略图 MVP 会先缓存文件。
-- 文本：UTF-8 预览，最多读取前 1MB，并提示截断。
-- 音频：封面预览；Media3/ExoPlayer 播放；SMB 音频先缓存到 app cache。
+1. 首次启动会请求媒体读取权限，请允许。
+2. 在首页选择**本地文件**进入公共目录。
+3. 或选择**添加 SMB**，输入 Host、Port、Share、用户名、密码等信息后保存并浏览。
 
-## 后续 TODO
+## 开发命令速查
 
-- SMB 密码从明文 DataStore 改为 EncryptedSharedPreferences 或 Android Keystore。
-- 为 Coil 写 SMB Fetcher，避免为了缩略图复制完整大图。
-- 做缓存大小上限和 LRU 清理。
-- 本地文件改为 SAF/MediaStore 优先，减少对传统外部存储权限的依赖。
-- 加收藏服务器、删除连接、复制/移动/删除文件。
-- 图片预览支持同目录左右切换。
-- 视频播放器接入 Media3。
-- 增加最小化单元测试或 instrumentation 冒烟测试。
+```powershell
+# 调试构建与安装
+.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:installDebug
 
-## 参考
+# 清理构建产物
+.\gradlew.bat clean
 
-- Android Gradle Plugin 9.2 官方说明：https://developer.android.com/build/releases/agp-9-2-0-release-notes
-- AGP 9 内置 Kotlin 迁移说明：https://developer.android.com/build/migrate-to-built-in-kotlin
-- Compose BOM：https://developer.android.com/develop/ui/compose/bom
+# 直接运行到已连接设备
+.\gradlew.bat :app:connectedDebugAndroidTest
+
+# 查看所有可用任务
+.\gradlew.bat tasks
+
+# 静态检查（lint）
+.\gradlew.bat :app:lintDebug
+
+# 依赖树
+.\gradlew.bat :app:dependencies --configuration debugRuntimeClasspath
+
+# 发布构建（需先配置 key.properties）
+.\gradlew.bat :app:assembleRelease
+
+# 发布 AAB（Google Play）
+.\gradlew.bat :app:bundleRelease
+
+# ADB 常用
+adb devices
+adb logcat -s SmbFileSource:D MainViewModel:D  # 查看 SMB 与 ViewModel 日志
+adb shell pm clear com.goodtvplorer           # 清空应用数据
+adb uninstall com.goodtvplorer                # 卸载
+```
+
+> 提示：Windows 终端使用 PowerShell 时，反斜杠可省略为 `.\gradlew.bat`；若使用 Git Bash，可改用 `./gradlew`。
+
+## 项目结构
+
+```text
+.
+├── app/
+│   ├── src/main/java/com/goodtvplorer/
+│   │   ├── data/            # 文件源抽象、本地/SMB 实现、数据模型、连接持久化
+│   │   ├── domain/          # 缩略图、缓存、文件类型识别、自定义 Coil Fetcher
+│   │   ├── ui/              # Compose 屏幕与组件、主题
+│   │   ├── viewmodel/       # MainViewModel、UI 状态与导航
+│   │   └── MainActivity.kt
+│   └── build.gradle.kts     # 应用模块构建配置
+├── build.gradle.kts         # 项目级插件配置
+├── gradle.properties        # Gradle JVM 与 Android 配置
+├── settings.gradle.kts      # 项目结构
+└── docs/
+    └── architecture.md      # 详细架构、已实现功能与后续计划
+```
+
+## 了解更多
+
+想了解以下内容的实现细节，请参阅 [`docs/architecture.md`](docs/architecture.md)：
+
+- 统一文件源抽象 `FileSource`
+- SMB 连接复用、重试与流水线读取
+- 缩略图生成策略（EXIF 优先、降采样、并发锁）
+- 图片/视频/音频/文本预览实现
+- UI 导航与 D-pad 焦点系统
+- 完整已实现功能列表
+
+## 后续计划
+
+详见 [`docs/architecture.md#后续计划`](docs/architecture.md#后续计划)。
+
+短期重点：SMB 密码加密、缓存上限与 LRU 清理、SAF/MediaStore 优先、SMB 连接编辑与删除。
+
+## 常见问题
+
+**Q：可以在普通 Android 手机上用吗？**
+A：可以安装运行，但所有交互都为电视遥控器设计（D-pad 焦点、OK/Back 键），触屏没有优化。
+
+**Q：为什么首次启动要请求存储权限？**
+A：本地文件浏览需要读取设备上的图片、视频、音频和下载目录。
+
+**Q：SMB 密码安全吗？**
+A：当前 MVP 版本使用明文存储，建议只在私人可信设备使用。加密存储已列入开发计划。
+
+**Q：视频为什么先缓存完整文件再显示缩略图？**
+A：当前使用 Android `ThumbnailUtils` 取帧，需要本地文件路径。这是临时方案，后续将改为范围读取或服务端缩略图。详情见 [`docs/architecture.md`](docs/architecture.md)。
+
+**Q：构建时报 JDK 相关错误怎么办？**
+A：检查 `gradle.properties` 中的 `org.gradle.java.home` 是否指向你本机的 JDK 17 根目录，并确认该目录下有 `bin/java.exe`。
+
+## License
+
+MIT License © 2026 Good TVplorer Contributors
