@@ -143,7 +143,8 @@ internal suspend fun loadCachedImageModel(
 
 internal fun resolveBrowserPath(currentPath: String, enteredPath: String): String {
     val cleaned = enteredPath.trim().replace('\\', '/').trim('/')
-    return if (enteredPath.trim().startsWith('/')) cleaned else listOf(currentPath.trim('/'), cleaned)
+    if (enteredPath.trim().startsWith('/')) return cleaned
+    return (if (currentPath.trim().startsWith('/')) "/" else "") + listOf(currentPath.trim('/'), cleaned)
         .filter(String::isNotBlank).joinToString("/")
 }
 
