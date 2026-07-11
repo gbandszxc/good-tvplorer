@@ -104,7 +104,8 @@ class MainViewModelTest {
 
         navigateBack(
             state = state,
-            openHome = {},
+            openNetwork = {},
+            openLocal = {},
             openBrowser = { _, _ -> browserOpens++ },
             restore = { restored = it },
         )
@@ -113,6 +114,34 @@ class MainViewModelTest {
         assertEquals(Screen.Browser("smb:nas", "photos"), restored?.screen)
         assertSame(browser, restored?.browser)
         assertEquals(PreviewState(), restored?.preview)
+    }
+
+    @Test
+    fun `back at local root keeps the local browser open`() {
+        var networkOpens = 0
+        var localOpens = 0
+        navigateBack(
+            state = MainUiState(screen = Screen.Browser("local", "")),
+            openNetwork = { networkOpens++ },
+            openLocal = { localOpens++ },
+            openBrowser = { _, _ -> },
+            restore = {},
+        )
+        assertEquals(0, networkOpens)
+        assertEquals(0, localOpens)
+    }
+
+    @Test
+    fun `back from network entry returns to local root`() {
+        var localOpens = 0
+        navigateBack(
+            state = MainUiState(screen = Screen.Network),
+            openNetwork = {},
+            openLocal = { localOpens++ },
+            openBrowser = { _, _ -> },
+            restore = {},
+        )
+        assertEquals(1, localOpens)
     }
 
     private fun imageItem() = FileItem(

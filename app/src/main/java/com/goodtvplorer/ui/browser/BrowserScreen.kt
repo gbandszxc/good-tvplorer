@@ -63,17 +63,15 @@ fun BrowserScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onToggleView: () -> Unit,
-    onDisplaySettings: () -> Unit,
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
     var focusedItem by remember(state.items) { mutableStateOf<FileItem?>(state.items.firstOrNull()) }
     val preview = focusedItem ?: state.items.firstOrNull()
 
-    Column(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(28.dp)) {
-        TopBar(path, viewMode, onToggleView, onRefresh, onDisplaySettings, onBack)
+    Column(Modifier.fillMaxSize()) {
+        BrowserToolbar(path, viewMode, onToggleView, onRefresh, onBack)
         Row(Modifier.fillMaxSize().padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            SourceRail()
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when {
                     state.loading -> LoadingPanel()
@@ -97,7 +95,7 @@ fun BrowserScreen(
 }
 
 @Composable
-private fun TopBar(path: String, viewMode: BrowserViewMode, onToggleView: () -> Unit, onRefresh: () -> Unit, onDisplaySettings: () -> Unit, onBack: () -> Unit) {
+private fun BrowserToolbar(path: String, viewMode: BrowserViewMode, onToggleView: () -> Unit, onRefresh: () -> Unit, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column {
             Text("Good TVplorer", color = Color(0xFFEEF6FB), fontSize = 25.sp, fontWeight = FontWeight.Bold)
@@ -106,24 +104,8 @@ private fun TopBar(path: String, viewMode: BrowserViewMode, onToggleView: () -> 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvButton(if (viewMode == BrowserViewMode.Grid) "网格" else "列表", onClick = onToggleView)
             TvButton("刷新", onClick = onRefresh)
-            TvButton("显示", onClick = onDisplaySettings)
             TvButton("返回", onClick = onBack)
         }
-    }
-}
-
-@Composable
-private fun SourceRail() {
-    Column(
-        Modifier.width(150.dp).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26)).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("位置", color = Color(0xFF7CC7D8), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        listOf("本地", "SMB/NAS", "图片", "音频", "视频").forEach {
-            Text(it, color = Color(0xFFD9E5EE), fontSize = 20.sp, modifier = Modifier.padding(vertical = 8.dp))
-        }
-        Spacer(Modifier.weight(1f))
-        Text("OK 打开\nBack 返回", color = Color(0xFF8191A3), fontSize = 15.sp, lineHeight = 21.sp)
     }
 }
 

@@ -1,6 +1,7 @@
 package com.goodtvplorer
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,9 +14,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import coil3.ImageLoader
@@ -24,8 +22,7 @@ import com.goodtvplorer.domain.FileSourceImageFetcher
 import com.goodtvplorer.domain.ImageModelKeyer
 import com.goodtvplorer.data.effectiveFontScale
 import com.goodtvplorer.ui.browser.BrowserScreen
-import com.goodtvplorer.ui.components.DisplaySettingsDialog
-import com.goodtvplorer.ui.home.HomeScreen
+import com.goodtvplorer.ui.main.MainDockLayout
 import com.goodtvplorer.ui.preview.AudioPreview
 import com.goodtvplorer.ui.preview.ImagePreview
 import com.goodtvplorer.ui.preview.TextPreview
@@ -57,44 +54,39 @@ class MainActivity : ComponentActivity() {
                     launcher.launch(permissions)
                 }
                 val state by viewModel.state.collectAsState()
-                var showDisplaySettings by remember { mutableStateOf(false) }
                 val density = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density, effectiveFontScale(state.fontScale))) {
-                    BackHandler {
-                        if (showDisplaySettings) showDisplaySettings = false else viewModel.goBack()
-                    }
+                    BackHandler(onBack = viewModel::goBack)
                     when (val screen = state.screen) {
-                        Screen.Home -> HomeScreen(
+                        is Screen.Browser, Screen.Network -> MainDockLayout(
+                            networkSelected = screen is Screen.Network || (screen is Screen.Browser && screen.sourceKey.startsWith("smb:")),
+                            showNetworkHub = screen is Screen.Network,
                             connections = state.smbConnections,
                             onLocal = viewModel::openLocal,
+                            onNetwork = viewModel::openNetwork,
                             onOpenSmb = viewModel::openSmb,
-                            onAddSmb = viewModel::addSmb,
-                            onDisplaySettings = { showDisplaySettings = true },
-                        )
-                        is Screen.Browser -> BrowserScreen(
-                            path = screen.path,
-                            state = state.browser,
-                            thumbnails = state.thumbnails,
-                            viewMode = state.browserViewMode,
-                            onOpen = viewModel::openItem,
-                            onBack = viewModel::goBack,
-                            onRefresh = viewModel::refresh,
-                            onToggleView = viewModel::toggleBrowserViewMode,
-                            onDisplaySettings = { showDisplaySettings = true },
-                            onThumbnailVisible = viewModel::requestThumbnail,
-                            onThumbnailHidden = viewModel::releaseThumbnail,
-                        )
+                            onConnections = { startActivity(Intent(this@MainActivity, ConnectionManagementActivity::class.java)) },
+                            onSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
+                        ) {
+                            if (screen is Screen.Browser) {
+                                BrowserScreen(
+                                    path = screen.path,
+                                    state = state.browser,
+                                    thumbnails = state.thumbnails,
+                                    viewMode = state.browserViewMode,
+                                    onOpen = viewModel::openItem,
+                                    onBack = viewModel::goBack,
+                                    onRefresh = viewModel::refresh,
+                                    onToggleView = viewModel::toggleBrowserViewMode,
+                                    onThumbnailVisible = viewModel::requestThumbnail,
+                                    onThumbnailHidden = viewModel::releaseThumbnail,
+                                )
+                            }
+                        }
                         is Screen.ImagePreview -> ImagePreview(screen.name, state.preview, viewModel::goBack)
                         is Screen.TextPreview -> TextPreview(screen.name, state.preview, viewModel::goBack)
                         is Screen.AudioPreview -> AudioPreview(screen.name, state.preview, viewModel::goBack)
                         is Screen.VideoPreview -> VideoPreview(screen.name, state.preview, viewModel::goBack)
-                    }
-                    if (showDisplaySettings) {
-                        DisplaySettingsDialog(
-                            fontScale = state.fontScale,
-                            onFontScale = viewModel::setFontScale,
-                            onDismiss = { showDisplaySettings = false },
-                        )
                     }
                 }
             }

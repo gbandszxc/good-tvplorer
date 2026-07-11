@@ -34,7 +34,7 @@ import java.io.File
 import kotlin.coroutines.EmptyCoroutineContext
 
 sealed interface Screen {
-    data object Home : Screen
+    data object Network : Screen
     data class Browser(val sourceKey: String, val path: String) : Screen
     data class ImagePreview(val sourceKey: String, val path: String, val name: String) : Screen
     data class TextPreview(val sourceKey: String, val path: String, val name: String) : Screen
@@ -69,7 +69,7 @@ data class PreviewState(
 )
 
 data class MainUiState(
-    val screen: Screen = Screen.Home,
+    val screen: Screen = Screen.Browser("local", ""),
     val smbConnections: List<SmbConnectionInfo> = emptyList(),
     val browser: BrowserState = BrowserState(),
     val preview: PreviewState = PreviewState(),
@@ -80,15 +80,20 @@ data class MainUiState(
 
 internal fun navigateBack(
     state: MainUiState,
-    openHome: () -> Unit,
+    openNetwork: () -> Unit,
+    openLocal: () -> Unit,
     openBrowser: (sourceKey: String, path: String) -> Unit,
     restore: (MainUiState) -> Unit,
 ) {
     when (val screen = state.screen) {
-        Screen.Home -> Unit
+        Screen.Network -> openLocal()
         is Screen.Browser -> {
             val parent = screen.path.trim('/').substringBeforeLast('/', "")
-            if (screen.path.isBlank()) openHome() else openBrowser(screen.sourceKey, parent)
+            when {
+                screen.path.isNotBlank() -> openBrowser(screen.sourceKey, parent)
+                screen.sourceKey == "local" -> Unit
+                else -> openNetwork()
+            }
         }
         is Screen.ImagePreview -> restore(
             state.copy(
@@ -196,13 +201,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(fontScale = fontScale) }
             }
         }
+        openLocal()
     }
 
-    fun openHome() {
+    fun openNetwork() {
         browserJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()
-        _state.update { it.copy(screen = Screen.Home, preview = PreviewState()) }
+        _state.update { it.copy(screen = Screen.Network, preview = PreviewState()) }
     }
 
     fun openLocal() = openBrowser(local.key, "")
@@ -300,7 +306,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         thumbnailRequests.release(thumbKey(item))
     }
 
-    fun goBack() = navigateBack(_state.value, ::openHome, { sourceKey, path -> openBrowser(sourceKey, path) }) { state ->
+    fun goBack() = navigateBack(_state.value, ::openNetwork, ::openLocal, { sourceKey, path -> openBrowser(sourceKey, path) }) { state ->
         restoreImagePreview(
             state = state,
             cancelPreview = {

@@ -23,7 +23,15 @@ class SmbConnectionStore(private val context: Context) {
     suspend fun add(info: SmbConnectionInfo) {
         val fixed = info.copy(id = info.id.ifBlank { UUID.randomUUID().toString() })
         context.smbDataStore.edit { prefs ->
-            prefs[connectionsKey] = prefs[connectionsKey].orEmpty().filterNot { decode(it)?.id == fixed.id }.toSet() + encode(fixed)
+            val connections = prefs[connectionsKey].orEmpty().mapNotNull(::decode)
+            prefs[connectionsKey] = upsertConnection(connections, fixed).map(::encode).toSet()
+        }
+    }
+
+    suspend fun delete(id: String) {
+        context.smbDataStore.edit { prefs ->
+            val connections = prefs[connectionsKey].orEmpty().mapNotNull(::decode)
+            prefs[connectionsKey] = removeConnection(connections, id).map(::encode).toSet()
         }
     }
 
@@ -39,3 +47,9 @@ class SmbConnectionStore(private val context: Context) {
         return SmbConnectionInfo(parts[0], parts[1], parts[2], parts[3].toIntOrNull() ?: 445, parts[4], parts[5], parts[6], parts[7].ifBlank { null })
     }
 }
+
+internal fun upsertConnection(connections: List<SmbConnectionInfo>, connection: SmbConnectionInfo): List<SmbConnectionInfo> =
+    connections.filterNot { it.id == connection.id } + connection
+
+internal fun removeConnection(connections: List<SmbConnectionInfo>, id: String): List<SmbConnectionInfo> =
+    connections.filterNot { it.id == id }
