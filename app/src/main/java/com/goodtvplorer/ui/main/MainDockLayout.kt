@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -39,6 +40,7 @@ import com.goodtvplorer.R
 import com.goodtvplorer.data.SmbConnectionInfo
 import com.goodtvplorer.ui.components.TvButton
 import com.goodtvplorer.ui.components.tvOkClick
+import com.goodtvplorer.viewmodel.BrowserViewMode
 
 @Composable
 fun MainDockLayout(
@@ -50,13 +52,17 @@ fun MainDockLayout(
     onOpenSmb: (String) -> Unit,
     onConnections: () -> Unit,
     onSettings: () -> Unit,
+    browserViewMode: BrowserViewMode?,
+    onToggleView: () -> Unit,
+    onRefresh: () -> Unit,
+    onBack: () -> Unit,
     content: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxSize().background(Color(0xFF0B121A))) {
-        SideDock(onConnections, onSettings)
+        SideDock(onConnections, onSettings, browserViewMode, onToggleView, onRefresh, onBack)
         Column(Modifier.weight(1f).fillMaxHeight()) {
             TopDock(networkSelected, onLocal, onNetwork)
-            Box(Modifier.weight(1f).fillMaxWidth().padding(28.dp)) {
+            Box(Modifier.weight(1f).fillMaxWidth().padding(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 16.dp)) {
                 if (showNetworkHub) {
                     NetworkHub(connections, onOpenSmb, onConnections)
                 } else {
@@ -70,26 +76,80 @@ fun MainDockLayout(
 @Composable
 private fun TopDock(networkSelected: Boolean, onLocal: () -> Unit, onNetwork: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(88.dp).background(Color(0xFF101A26)).padding(horizontal = 28.dp),
+        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 24.dp),
         horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Bottom,
     ) {
-        TvButton(if (networkSelected) "本机" else "本机 · 当前", modifier = Modifier.width(190.dp), onClick = onLocal)
-        Spacer(Modifier.width(14.dp))
-        TvButton(if (networkSelected) "网络 / SMB · 当前" else "网络 / SMB", modifier = Modifier.width(220.dp), onClick = onNetwork)
+        SourceTab(label = "本机", selected = !networkSelected, onClick = onLocal)
+        Spacer(Modifier.width(18.dp))
+        SourceTab(label = "网络", selected = networkSelected, onClick = onNetwork)
     }
 }
 
 @Composable
-private fun SideDock(onConnections: () -> Unit, onSettings: () -> Unit) {
+private fun SourceTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val background by animateColorAsState(
+        targetValue = when {
+            focused -> Color(0xFFFFC857)
+            selected -> Color(0xFF152232)
+            else -> Color.Transparent
+        },
+        label = "source-tab-background",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA),
+        label = "source-tab-content",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) Color(0xFFFFE3A1) else Color.Transparent,
+        label = "source-tab-border",
+    )
+    val shape = RoundedCornerShape(16.dp)
+
+    Box(
+        Modifier
+            .height(36.dp)
+            .shadow(if (selected && !focused) 8.dp else 0.dp, shape)
+            .clip(shape)
+            .background(background)
+            .border(if (focused) 3.dp else 1.dp, borderColor, shape)
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .tvOkClick(onClick)
+            .semantics { contentDescription = label }
+            .padding(horizontal = 24.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = contentColor, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun SideDock(
+    onConnections: () -> Unit,
+    onSettings: () -> Unit,
+    browserViewMode: BrowserViewMode?,
+    onToggleView: () -> Unit,
+    onRefresh: () -> Unit,
+    onBack: () -> Unit,
+) {
     Column(
-        Modifier.width(104.dp).fillMaxHeight().background(Color(0xFF101A26)).padding(vertical = 20.dp),
+        Modifier.width(60.dp).fillMaxHeight().background(Color(0xFF101A26)).padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("G", color = Color(0xFF7CC7D8), fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        if (browserViewMode != null) {
+            val viewLabel = if (browserViewMode == BrowserViewMode.Grid) "切换为列表视图" else "切换为网格视图"
+            val viewIcon = if (browserViewMode == BrowserViewMode.Grid) R.drawable.ic_view_list else R.drawable.ic_view_grid
+            DockIconButton(viewIcon, viewLabel, onToggleView)
+            Spacer(Modifier.height(8.dp))
+            DockIconButton(R.drawable.ic_refresh, "刷新", onRefresh)
+            Spacer(Modifier.height(8.dp))
+            DockIconButton(R.drawable.ic_back, "返回上级", onBack)
+        }
         Spacer(Modifier.weight(1f))
         DockIconButton(R.drawable.ic_connections, "连接管理", onConnections)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         DockIconButton(R.drawable.ic_settings, "设置", onSettings)
     }
 }
@@ -100,13 +160,13 @@ private fun DockIconButton(icon: Int, label: String, onClick: () -> Unit) {
     val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color.Transparent, label = "dock-background")
     val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "dock-tint")
     Box(
-        Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)).background(background)
-            .border(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent, RoundedCornerShape(8.dp))
+        Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(background)
+            .border(if (focused) 2.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent, RoundedCornerShape(12.dp))
             .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(painterResource(icon), contentDescription = label, tint = tint, modifier = Modifier.size(34.dp))
+        Icon(painterResource(icon), contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
     }
 }
 

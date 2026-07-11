@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,11 +25,16 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,13 +42,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.goodtvplorer.R
 import com.goodtvplorer.data.FileItem
 import com.goodtvplorer.data.FileKind
 import com.goodtvplorer.domain.Formatters
@@ -60,9 +79,7 @@ fun BrowserScreen(
     thumbnails: Map<String, File>,
     viewMode: BrowserViewMode,
     onOpen: (FileItem) -> Unit,
-    onBack: () -> Unit,
-    onRefresh: () -> Unit,
-    onToggleView: () -> Unit,
+    onOpenPath: (String) -> Unit,
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
@@ -70,8 +87,11 @@ fun BrowserScreen(
     val preview = focusedItem ?: state.items.firstOrNull()
 
     Column(Modifier.fillMaxSize()) {
-        BrowserToolbar(path, viewMode, onToggleView, onRefresh, onBack)
-        Row(Modifier.fillMaxSize().padding(top = 22.dp), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        BrowserToolbar(path, onOpenPath)
+        Row(
+            Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when {
                     state.loading -> LoadingPanel()
@@ -95,17 +115,68 @@ fun BrowserScreen(
 }
 
 @Composable
-private fun BrowserToolbar(path: String, viewMode: BrowserViewMode, onToggleView: () -> Unit, onRefresh: () -> Unit, onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Column {
-            Text("Good TVplorer", color = Color(0xFFEEF6FB), fontSize = 25.sp, fontWeight = FontWeight.Bold)
-            Text(if (path.isBlank()) "媒体入口 / 根目录" else path, color = Color(0xFF9FB0C2), fontSize = 18.sp, maxLines = 1)
+private fun BrowserToolbar(path: String, onOpenPath: (String) -> Unit) {
+    var editing by remember(path) { mutableStateOf(false) }
+    var enteredPath by remember(path) { mutableStateOf(path) }
+    val inputFocusRequester = remember { FocusRequester() }
+    val displayPath = if (path.isBlank()) "/" else path
+
+    fun submitPath() {
+        editing = false
+        onOpenPath(enteredPath)
+    }
+
+    BackHandler(enabled = editing) { editing = false }
+    LaunchedEffect(editing) {
+        if (editing) inputFocusRequester.requestFocus()
+    }
+
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26)).padding(horizontal = 10.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PathEditButton(onClick = {
+            enteredPath = path
+            editing = true
+        })
+        Spacer(Modifier.width(12.dp))
+        if (editing) {
+            BasicTextField(
+                value = enteredPath,
+                onValueChange = { enteredPath = it },
+                modifier = Modifier.weight(1f).focusRequester(inputFocusRequester).onPreviewKeyEvent {
+                    if (it.type == KeyEventType.KeyUp && it.key == Key.Enter) {
+                        submitPath()
+                        true
+                    } else {
+                        false
+                    }
+                },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 20.sp),
+                cursorBrush = SolidColor(Color(0xFFC8D5E2)),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = { submitPath() }),
+            )
+        } else {
+            Text(displayPath, modifier = Modifier.weight(1f), color = Color(0xFF9FB0C2), fontSize = 20.sp, maxLines = 1)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TvButton(if (viewMode == BrowserViewMode.Grid) "网格" else "列表", onClick = onToggleView)
-            TvButton("刷新", onClick = onRefresh)
-            TvButton("返回", onClick = onBack)
-        }
+    }
+}
+
+@Composable
+private fun PathEditButton(onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color.Transparent, label = "path-edit-background")
+    val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "path-edit-tint")
+    Box(
+        Modifier.size(34.dp).clip(RoundedCornerShape(6.dp)).background(background)
+            .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent), RoundedCornerShape(6.dp))
+            .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
+            .semantics { contentDescription = "编辑路径" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painterResource(R.drawable.ic_edit), contentDescription = "编辑路径", tint = tint, modifier = Modifier.size(20.dp))
     }
 }
 

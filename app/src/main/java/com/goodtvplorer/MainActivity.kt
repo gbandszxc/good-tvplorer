@@ -67,6 +67,10 @@ class MainActivity : ComponentActivity() {
                             onOpenSmb = viewModel::openSmb,
                             onConnections = { startActivity(Intent(this@MainActivity, ConnectionManagementActivity::class.java)) },
                             onSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
+                            browserViewMode = if (screen is Screen.Browser) state.browserViewMode else null,
+                            onToggleView = viewModel::toggleBrowserViewMode,
+                            onRefresh = viewModel::refresh,
+                            onBack = viewModel::goBack,
                         ) {
                             if (screen is Screen.Browser) {
                                 BrowserScreen(
@@ -75,9 +79,7 @@ class MainActivity : ComponentActivity() {
                                     thumbnails = state.thumbnails,
                                     viewMode = state.browserViewMode,
                                     onOpen = viewModel::openItem,
-                                    onBack = viewModel::goBack,
-                                    onRefresh = viewModel::refresh,
-                                    onToggleView = viewModel::toggleBrowserViewMode,
+                                    onOpenPath = viewModel::openEnteredPath,
                                     onThumbnailVisible = viewModel::requestThumbnail,
                                     onThumbnailHidden = viewModel::releaseThumbnail,
                                 )
