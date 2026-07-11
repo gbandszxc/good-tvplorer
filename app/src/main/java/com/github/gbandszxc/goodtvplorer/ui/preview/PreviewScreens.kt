@@ -1,6 +1,7 @@
 package com.github.gbandszxc.goodtvplorer.ui.preview
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -80,6 +81,7 @@ fun ImageViewer(
     val viewerFocusRequester = remember { FocusRequester() }
     val selectedFilmFocusRequester = remember(name) { FocusRequester() }
     LaunchedEffect(Unit) { viewerFocusRequester.requestFocus() }
+    BackHandler(enabled = controlsVisible) { controlsVisible = false }
     Box(
         Modifier.fillMaxSize().background(Color.Black).focusRequester(viewerFocusRequester).focusable()
             .onPreviewKeyEvent { event ->
@@ -108,19 +110,19 @@ fun ImageViewer(
         when {
             state.loading -> {
                 state.placeholder?.let {
-                    AsyncImage(model = it, contentDescription = name, modifier = Modifier.fillMaxSize().padding(36.dp), contentScale = ContentScale.Fit)
+                    AsyncImage(model = it, contentDescription = name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 }
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
             state.error != null -> {
                 state.placeholder?.let {
-                    AsyncImage(model = it, contentDescription = name, modifier = Modifier.fillMaxSize().padding(36.dp), contentScale = ContentScale.Fit)
+                    AsyncImage(model = it, contentDescription = name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 }
                 Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
             }
             state.image != null -> {
                 if (!loaded && state.placeholder != null) {
-                    AsyncImage(model = state.placeholder, contentDescription = name, modifier = Modifier.fillMaxSize().padding(36.dp), contentScale = ContentScale.Fit)
+                    AsyncImage(model = state.placeholder, contentDescription = name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 }
                 if (!loaded && state.placeholder == null && loadError == null) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -128,7 +130,7 @@ fun ImageViewer(
                 AsyncImage(
                     model = state.image,
                     contentDescription = name,
-                    modifier = Modifier.fillMaxSize().padding(36.dp).alpha(if (loaded) 1f else 0f),
+                    modifier = Modifier.fillMaxSize().alpha(if (loaded) 1f else 0f),
                     contentScale = ContentScale.Fit,
                     onSuccess = {
                         loaded = true
