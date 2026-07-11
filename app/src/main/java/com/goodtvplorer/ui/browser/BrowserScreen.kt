@@ -99,6 +99,7 @@ fun BrowserScreen(
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
     var searchHasFocus by remember { mutableStateOf(false) }
+    var suppressContentAnchorFocus by remember(path) { mutableStateOf(false) }
     val searchableItems = searchItems ?: state.items
     val visibleItems = remember(searchableItems, searchQuery, sort) {
         filterAndSortBrowserItems(searchableItems, searchQuery, sort)
@@ -113,7 +114,16 @@ fun BrowserScreen(
     val preview = focusedItem ?: visibleItems.firstOrNull()
 
     Column(Modifier.fillMaxSize()) {
-        BrowserToolbar(path, sort, searchQuery, onOpenPath, onSortChange, onSearchQueryChange, onSearchFocusChange = { searchHasFocus = it })
+        BrowserToolbar(
+            path,
+            sort,
+            searchQuery,
+            onOpenPath,
+            onSortChange,
+            onSearchQueryChange,
+            onSearchFocusChange = { searchHasFocus = it },
+            onSearchMoveDown = { suppressContentAnchorFocus = true },
+        )
         Row(
             Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -127,12 +137,12 @@ fun BrowserScreen(
                     visibleItems.isEmpty() -> MessagePanel("未找到匹配项目", "尝试修改搜索词。", Color(0xFFC8D5E2))
                     viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && !suppressContentAnchorFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                     else -> LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && !suppressContentAnchorFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                 }
@@ -151,6 +161,7 @@ private fun BrowserToolbar(
     onSortChange: (BrowserSort) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearchFocusChange: (Boolean) -> Unit,
+    onSearchMoveDown: () -> Unit,
 ) {
     var editing by remember(path) { mutableStateOf(false) }
     var enteredPath by remember(path) { mutableStateOf(path) }
@@ -204,7 +215,7 @@ private fun BrowserToolbar(
                 Text(displayPath, modifier = Modifier.weight(1f), color = Color(0xFF9FB0C2), fontSize = 20.sp, maxLines = 1)
             }
         }
-        SearchField(searchQuery, onSearchQueryChange, onSearchFocusChange)
+        SearchField(searchQuery, onSearchQueryChange, onSearchFocusChange, onSearchMoveDown)
     }
 }
 
@@ -234,7 +245,12 @@ private fun SortMenuButton(sort: BrowserSort, onSortChange: (BrowserSort) -> Uni
 }
 
 @Composable
-private fun SearchField(query: String, onQueryChange: (String) -> Unit, onFocusChange: (Boolean) -> Unit) {
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
+    onMoveDown: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     val border = if (focused) Color(0xFFFFE3A1) else Color.Transparent
@@ -259,6 +275,7 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit, onFocusC
                         true
                     }
                     Key.DirectionDown -> {
+                        onMoveDown()
                         focusManager.moveFocus(FocusDirection.Down)
                         true
                     }
