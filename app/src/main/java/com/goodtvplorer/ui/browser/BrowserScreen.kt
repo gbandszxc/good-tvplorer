@@ -97,12 +97,12 @@ fun BrowserScreen(
                     state.loading -> LoadingPanel()
                     state.error != null -> MessagePanel("连接或读取失败", state.error, Color(0xFFFFA3A3))
                     state.items.isEmpty() -> MessagePanel("目录为空", "Back 返回上级，或刷新当前目录。", Color(0xFFC8D5E2))
-                    viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(state.items, key = { it.handle.sourceKey + it.handle.path }) { item ->
                             FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
-                    else -> LazyVerticalGrid(columns = GridCells.Adaptive(180.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    else -> LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(state.items, key = { it.handle.sourceKey + it.handle.path }) { item ->
                             FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
@@ -183,13 +183,13 @@ private fun PathEditButton(onClick: () -> Unit) {
 @Composable
 private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, onFocus: () -> Unit, onClick: () -> Unit) {
     FocusSurface(Modifier.fillMaxWidth(), onFocus, onClick) { focused ->
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            MediaThumb(item, thumbnail, Modifier.size(78.dp), onThumbnailVisible, onThumbnailHidden)
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            MediaThumb(item, thumbnail, Modifier.size(48.dp), onThumbnailVisible, onThumbnailHidden)
             Column(Modifier.weight(1f)) {
-                Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                Text(meta(item), color = if (focused) Color(0xFF4C3B12) else Color(0xFFA8B8C7), fontSize = 17.sp, maxLines = 1)
+                Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text(meta(item), color = if (focused) Color(0xFF4C3B12) else Color(0xFFA8B8C7), fontSize = 16.sp, maxLines = 1)
             }
-            Text(kindLabel(item.kind), color = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), fontSize = 18.sp)
+            Text(kindLabel(item.kind), color = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), fontSize = 16.sp)
         }
     }
 }
@@ -197,9 +197,9 @@ private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileI
 @Composable
 private fun FileTile(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, onFocus: () -> Unit, onClick: () -> Unit) {
     FocusSurface(Modifier.fillMaxWidth(), onFocus, onClick) { focused ->
-        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 10f), onThumbnailVisible, onThumbnailHidden)
-            Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 }
