@@ -2,16 +2,24 @@ package com.github.gbandszxc.goodtvplorer.ui.preview
 
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -26,24 +34,77 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import coil3.compose.AsyncImage
+import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
+import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
+import com.github.gbandszxc.goodtvplorer.viewmodel.MainViewModel
 import com.github.gbandszxc.goodtvplorer.viewmodel.PreviewState
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
 @Composable
-fun ImagePreview(name: String, state: PreviewState, onBack: () -> Unit) {
+fun ImageViewer(
+    name: String,
+    selectedPath: String,
+    state: PreviewState,
+    images: List<FileItem>,
+    thumbnails: Map<String, java.io.File>,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onSelect: (FileItem) -> Unit,
+    onThumbnailVisible: (FileItem) -> Unit,
+    onThumbnailHidden: (FileItem) -> Unit,
+    onBack: () -> Unit,
+) {
     var loaded by remember(state.image) { mutableStateOf(false) }
     var loadError by remember(state.image) { mutableStateOf<String?>(null) }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    var controlsVisible by remember { mutableStateOf(false) }
+    val viewerFocusRequester = remember { FocusRequester() }
+    val selectedFilmFocusRequester = remember(name) { FocusRequester() }
+    LaunchedEffect(Unit) { viewerFocusRequester.requestFocus() }
+    Box(
+        Modifier.fillMaxSize().background(Color.Black).focusRequester(viewerFocusRequester).focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when {
+                    event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter -> {
+                        controlsVisible = true
+                        true
+                    }
+                    !controlsVisible && event.key == Key.DirectionLeft -> {
+                        onPrevious()
+                        true
+                    }
+                    !controlsVisible && event.key == Key.DirectionRight -> {
+                        onNext()
+                        true
+                    }
+                    controlsVisible && event.key == Key.DirectionDown -> {
+                        selectedFilmFocusRequester.requestFocus()
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
         when {
             state.loading -> {
                 state.placeholder?.let {
@@ -80,8 +141,69 @@ fun ImagePreview(name: String, state: PreviewState, onBack: () -> Unit) {
                 }
             }
         }
-        Text(name, color = Color.White, fontSize = 24.sp, modifier = Modifier.align(Alignment.TopStart).padding(28.dp))
-        TvButton("返回", modifier = Modifier.align(Alignment.TopEnd).padding(24.dp), onClick = onBack)
+        if (controlsVisible) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().background(Color(0xE6101A26)).padding(horizontal = 28.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TvButton("返回", contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 10.dp), fontSize = 20.sp, onClick = onBack)
+                }
+                Spacer(Modifier.weight(1f))
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().height(132.dp).background(Color(0xE6101A26)).padding(horizontal = 28.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(images, key = { it.handle.sourceKey + it.handle.path }) { item ->
+                        ImageFilmstripItem(
+                            item = item,
+                            thumbnail = thumbnails[MainViewModel.thumbKey(item)],
+                            selected = item.handle.path == selectedPath,
+                            focusRequester = if (item.handle.path == selectedPath) selectedFilmFocusRequester else null,
+                            onSelect = { onSelect(item) },
+                            onThumbnailVisible = onThumbnailVisible,
+                            onThumbnailHidden = onThumbnailHidden,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageFilmstripItem(
+    item: FileItem,
+    thumbnail: java.io.File?,
+    selected: Boolean,
+    focusRequester: FocusRequester?,
+    onSelect: () -> Unit,
+    onThumbnailVisible: (FileItem) -> Unit,
+    onThumbnailHidden: (FileItem) -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    DisposableEffect(item, thumbnail) {
+        val requested = thumbnail == null
+        if (requested) onThumbnailVisible(item)
+        onDispose { if (requested) onThumbnailHidden(item) }
+    }
+    LaunchedEffect(focusRequester) { focusRequester?.requestFocus() }
+    Box(
+        Modifier.width(144.dp).fillMaxSize().clip(RoundedCornerShape(8.dp))
+            .background(if (focused) Color(0xFFFFC857) else Color(0xFF152232))
+            .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color(0xFF26384B)), RoundedCornerShape(8.dp))
+            .onFocusChanged { focused = it.isFocused }
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusable().tvOkClick(onSelect),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (thumbnail != null) {
+            AsyncImage(model = thumbnail, contentDescription = item.name, modifier = Modifier.fillMaxSize().padding(6.dp), contentScale = ContentScale.Crop)
+        } else {
+            Text("IMG", color = if (focused) Color(0xFF151007) else Color(0xFFC9D8E5), fontSize = 24.sp)
+        }
+        if (selected) Text("当前", color = Color(0xFFF3F7FA), fontSize = 16.sp, modifier = Modifier.align(Alignment.BottomCenter).background(Color(0xCC101A26)).padding(horizontal = 8.dp, vertical = 2.dp))
     }
 }
 

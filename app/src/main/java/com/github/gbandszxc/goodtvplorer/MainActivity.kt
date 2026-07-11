@@ -24,7 +24,7 @@ import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
 import com.github.gbandszxc.goodtvplorer.ui.browser.BrowserScreen
 import com.github.gbandszxc.goodtvplorer.ui.main.MainDockLayout
 import com.github.gbandszxc.goodtvplorer.ui.preview.AudioPreview
-import com.github.gbandszxc.goodtvplorer.ui.preview.ImagePreview
+import com.github.gbandszxc.goodtvplorer.ui.preview.ImageViewer
 import com.github.gbandszxc.goodtvplorer.ui.preview.TextPreview
 import com.github.gbandszxc.goodtvplorer.ui.preview.VideoPreview
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvTheme
@@ -95,7 +95,19 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-                        is Screen.ImagePreview -> ImagePreview(screen.name, state.preview, viewModel::goBack)
+                        is Screen.ImageViewer -> ImageViewer(
+                            name = screen.name,
+                            selectedPath = screen.path,
+                            state = state.preview,
+                            images = state.imageViewerItems,
+                            thumbnails = state.thumbnails,
+                            onPrevious = { viewModel.moveViewerImage(-1) },
+                            onNext = { viewModel.moveViewerImage(1) },
+                            onSelect = viewModel::selectViewerImage,
+                            onThumbnailVisible = viewModel::requestThumbnail,
+                            onThumbnailHidden = viewModel::releaseThumbnail,
+                            onBack = viewModel::goBack,
+                        )
                         is Screen.TextPreview -> TextPreview(screen.name, state.preview, viewModel::goBack)
                         is Screen.AudioPreview -> AudioPreview(screen.name, state.preview, viewModel::goBack)
                         is Screen.VideoPreview -> VideoPreview(screen.name, state.preview, viewModel::goBack)

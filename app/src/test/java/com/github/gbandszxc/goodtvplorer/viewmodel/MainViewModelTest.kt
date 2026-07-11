@@ -98,6 +98,19 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `image viewer follows the current directory sort and excludes non-images`() {
+        val later = fileItem("z.jpg", FileKind.Image, size = 1L, modifiedAtMillis = 1L)
+        val selected = fileItem("a.png", FileKind.Image, size = 1L, modifiedAtMillis = 1L)
+        val text = fileItem("notes.txt", FileKind.Text, size = 1L, modifiedAtMillis = 1L)
+
+        assertEquals(
+            listOf(selected, later),
+            imageViewerItems(listOf(later, text, selected), BrowserSort(), selected),
+        )
+        assertEquals(listOf(selected), imageViewerItems(listOf(later), BrowserSort(), selected))
+    }
+
+    @Test
     fun `image preview restore cancels preview work before restoring state`() {
         val state = MainUiState(screen = Screen.Browser("smb:nas", "photos"))
         val events = mutableListOf<String>()
@@ -152,7 +165,7 @@ class MainViewModelTest {
         val item = imageItem()
         val browser = BrowserState(items = listOf(item))
         val state = MainUiState(
-            screen = Screen.ImagePreview("smb:nas", item.handle.path, item.name),
+            screen = Screen.ImageViewer("smb:nas", item.handle.path, item.name),
             browser = browser,
             preview = PreviewState(loading = true),
         )

@@ -41,7 +41,7 @@ import kotlin.coroutines.EmptyCoroutineContext
 sealed interface Screen {
     data object Network : Screen
     data class Browser(val sourceKey: String, val path: String) : Screen
-    data class ImagePreview(val sourceKey: String, val path: String, val name: String) : Screen
+    data class ImageViewer(val sourceKey: String, val path: String, val name: String) : Screen
     data class TextPreview(val sourceKey: String, val path: String, val name: String) : Screen
     data class AudioPreview(val sourceKey: String, val path: String, val name: String) : Screen
     data class VideoPreview(val sourceKey: String, val path: String, val name: String) : Screen
@@ -94,6 +94,7 @@ data class MainUiState(
     val browser: BrowserState = BrowserState(loading = true),
     val focusAnchorPath: String? = null,
     val preview: PreviewState = PreviewState(),
+    val imageViewerItems: List<FileItem> = emptyList(),
     val thumbnails: Map<String, File> = emptyMap(),
     val browserViewMode: BrowserViewMode = BrowserViewMode.Grid,
     val browserSort: BrowserSort = BrowserSort(),
@@ -130,6 +131,11 @@ internal fun filterAndSortBrowserItems(
         .sortedWith(compareBy<FileItem> { it.kind != FileKind.Directory }.then(itemComparator))
         .toList()
 }
+
+internal fun imageViewerItems(items: List<FileItem>, sort: BrowserSort, selected: FileItem): List<FileItem> =
+    filterAndSortBrowserItems(items, "", sort).filter { it.kind == FileKind.Image }.let {
+        if (it.any { item -> item.handle == selected.handle }) it else listOf(selected)
+    }
 
 private fun compareFileNames(left: FileItem, right: FileItem): Int =
     left.name.lowercase(Locale.ROOT).compareTo(right.name.lowercase(Locale.ROOT))
@@ -181,10 +187,11 @@ internal fun navigateBack(
                 else -> openNetwork()
             }
         }
-        is Screen.ImagePreview -> restore(
+        is Screen.ImageViewer -> restore(
             state.copy(
                 screen = Screen.Browser(screen.sourceKey, screen.path.substringBeforeLast('/', "")),
                 preview = PreviewState(),
+                imageViewerItems = emptyList(),
             ),
         )
         is Screen.TextPreview, is Screen.AudioPreview, is Screen.VideoPreview -> {
@@ -480,7 +487,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 openBrowser(item.handle.sourceKey, item.handle.path)
             }
-            FileKind.Image -> prepareImage(item)
+            FileKind.Image -> prepareImage(item, imageViewerItems(_state.value.browser.items, _state.value.browserSort, item))
             FileKind.Text -> prepareText(item.handle, item.name)
             FileKind.Audio -> prepareAudio(item.handle, item.name)
             FileKind.Video -> prepareVideo(item.handle, item.name)
@@ -508,6 +515,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         thumbnailRequests.release(thumbKey(item))
     }
 
+    fun selectViewerImage(item: FileItem) {
+        if (item in _state.value.imageViewerItems) prepareImage(item, _state.value.imageViewerItems)
+    }
+
+    fun moveViewerImage(offset: Int) {
+        val items = _state.value.imageViewerItems
+        val screen = _state.value.screen as? Screen.ImageViewer ?: return
+        val index = items.indexOfFirst { it.handle.path == screen.path }
+        items.getOrNull(index + offset)?.let { prepareImage(it, items) }
+    }
+
     fun goBack() = navigateBack(_state.value, ::openNetworkHub, ::openLocal, { sourceKey, path ->
         viewModelScope.launch { openBrowser(sourceKey, path) }
     }) { state ->
@@ -521,9 +539,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private fun prepareImage(item: FileItem) {
+    private fun prepareImage(item: FileItem, viewerItems: List<FileItem>) {
         val source = sources[item.handle.sourceKey] ?: return showError("文件源不存在")
-        val screen = Screen.ImagePreview(item.handle.sourceKey, item.handle.path, item.name)
+        val screen = Screen.ImageViewer(item.handle.sourceKey, item.handle.path, item.name)
         previewJob?.cancel()
         previewJob = null
         val key = thumbKey(item)
@@ -536,6 +554,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(
                 screen = screen,
+                imageViewerItems = viewerItems,
                 preview = PreviewState(
                     loading = true,
                     placeholder = it.thumbnails[thumbKey(item)],
