@@ -10,6 +10,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -54,6 +57,18 @@ class MainActivity : ComponentActivity() {
                     launcher.launch(permissions)
                 }
                 val state by viewModel.state.collectAsState()
+                val imageViewerVisible = state.screen is Screen.ImageViewer
+                LaunchedEffect(imageViewerVisible) {
+                    WindowCompat.setDecorFitsSystemWindows(window, !imageViewerVisible)
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        if (imageViewerVisible) {
+                            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                            hide(WindowInsetsCompat.Type.systemBars())
+                        } else {
+                            show(WindowInsetsCompat.Type.systemBars())
+                        }
+                    }
+                }
                 val density = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density, effectiveFontScale(state.fontScale))) {
                     BackHandler(onBack = viewModel::goBack)
