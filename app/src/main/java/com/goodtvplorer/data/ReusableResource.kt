@@ -30,6 +30,14 @@ internal class ReusableResource<T>(
         }
     }
 
+    fun invalidateCurrentIf(predicate: (T) -> Boolean): Boolean = synchronized(this) {
+        val current = value ?: return@synchronized false
+        if (!predicate(current)) return@synchronized false
+        close(current)
+        value = null
+        true
+    }
+
     fun close() = synchronized(this) {
         permanentlyClosed = true
         value?.let(close)

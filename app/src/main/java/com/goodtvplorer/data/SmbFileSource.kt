@@ -7,7 +7,6 @@ import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.mssmb2.SMBApiException
-import com.hierynomus.mssmb2.messages.SMB2Echo
 import com.hierynomus.protocol.transport.TransportException
 import com.hierynomus.smbj.SMBClient
 import com.hierynomus.smbj.SmbConfig
@@ -15,6 +14,7 @@ import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.common.SMBRuntimeException
 import com.hierynomus.smbj.connection.Connection
 import com.hierynomus.smbj.session.Session
+import com.hierynomus.smbj.share.AsyncFileReader
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File as SmbFile
 import kotlinx.coroutines.CancellationException
@@ -27,6 +27,7 @@ import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.ArrayDeque
 import java.util.EnumSet
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -122,10 +123,12 @@ internal inline fun copyStreamCancellable(
     }
 }
 
+internal fun smbReadBufferSize(negotiatedMaxReadSize: Int): Int =
+    negotiatedMaxReadSize.coerceIn(64 * 1024, 1024 * 1024)
+
 internal class IdleResourceVerifier(
     private val clockNanos: () -> Long = System::nanoTime,
     private val idleNanos: Long,
-    private val probe: () -> Boolean,
 ) {
     private var lastVerifiedNanos = clockNanos()
     private var activeCount = 0
@@ -135,10 +138,7 @@ internal class IdleResourceVerifier(
         if (!connected) return false
         if (activeCount > 0) return true
         val now = clockNanos()
-        if (now - lastVerifiedNanos <= idleNanos) return true
-        if (!probe()) return false
-        lastVerifiedNanos = clockNanos()
-        return true
+        return now - lastVerifiedNanos <= idleNanos
     }
 
     @Synchronized
@@ -156,9 +156,15 @@ internal class IdleResourceVerifier(
     fun markActive() {
         lastVerifiedNanos = clockNanos()
     }
+
+    @Synchronized
+    fun hasActiveLeases(): Boolean = activeCount > 0
 }
 
-class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoCloseable {
+class SmbFileSource(
+    private val info: SmbConnectionInfo,
+    private val freshConnectionPerOperation: Boolean = false,
+) : FileSource, AutoCloseable {
     override val key = "smb:${info.id}"
     override val kind = SourceKind.Smb
     override val title = info.name
@@ -175,6 +181,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
     )
 
     override suspend fun list(path: String): List<FileItem> = withContext(Dispatchers.IO) {
+        if (freshConnectionPerOperation) resources.invalidateCurrentIf { true }
         val started = System.nanoTime()
         var generation = 0L
         var count = 0
@@ -233,16 +240,56 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         if (target.exists() && target.length() > 0L) return@withContext
         val parent = requireNotNull(target.parentFile) { "缓存文件缺少父目录" }.also { it.mkdirs() }
         val partial = File(parent, ".${target.name}.${UUID.randomUUID()}.part")
-        val coroutine = currentCoroutineContext()
+        val started = System.nanoTime()
+        var copiedBytes = 0L
         try {
-            openStream(path).use { input ->
-                partial.outputStream().use { output ->
-                    copyStreamCancellable(input, output, ensureActive = coroutine::ensureActive)
+            if (freshConnectionPerOperation) resources.invalidateCurrentIf { true }
+            val (fileSize, chunkSize) = withShare { current ->
+                current.share.getFileInformation(path.trim('/')).standardInformation.endOfFile to current.readBufferSize
+            }
+            if (fileSize >= PIPELINED_COPY_MIN_BYTES) {
+                copyToPipelined(path, partial, fileSize, chunkSize)
+            } else {
+                val coroutine = currentCoroutineContext()
+                openStream(path).use { input ->
+                    partial.outputStream().use { output ->
+                        copyStreamCancellable(input, output, ensureActive = coroutine::ensureActive)
+                    }
                 }
             }
             check(commitCacheFile(partial, target)) { "无法提交缓存文件：${target.name}" }
+            copiedBytes = fileSize
         } finally {
             partial.delete()
+            logPerformance("copyTo", started, 0L, path, bytes = copiedBytes, count = 1)
+        }
+    }
+
+    private suspend fun copyToPipelined(path: String, target: File, fileSize: Long, chunkSize: Int) {
+        val coroutine = currentCoroutineContext()
+        withShare { current ->
+            openFile(current.share, path).use { file ->
+                target.outputStream().buffered(chunkSize).use { output ->
+                    val pending = ArrayDeque<PendingRead>()
+                    var nextOffset = 0L
+                    try {
+                        while (nextOffset < fileSize || pending.isNotEmpty()) {
+                            coroutine.ensureActive()
+                            while (nextOffset < fileSize && pending.size < READ_AHEAD_REQUESTS) {
+                                val length = minOf(chunkSize.toLong(), fileSize - nextOffset).toInt()
+                                pending.addLast(PendingRead(length, AsyncFileReader.read(file, nextOffset, length)))
+                                nextOffset += length
+                            }
+                            val request = pending.removeFirst()
+                            val response = request.future.get()
+                            check(response.dataLength == request.length) { "SMB 文件读取提前结束：$path" }
+                            output.write(response.data, 0, response.dataLength)
+                        }
+                    } finally {
+                        pending.forEach { it.future.cancel(true) }
+                    }
+                }
+            }
         }
     }
 
@@ -308,7 +355,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
                 nextConnection,
                 nextSession,
                 nextShare,
-                IdleResourceVerifier(idleNanos = IDLE_PROBE_NANOS) { probeConnection(nextConnection) },
+                IdleResourceVerifier(idleNanos = IDLE_RECONNECT_NANOS),
             ).also { connected = true }
         } catch (e: Exception) {
             runCatching { nextShare?.close() }
@@ -324,23 +371,6 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
     private fun isRetryable(error: Throwable): Boolean = error is IOException ||
         error is TransportException ||
         (error is SMBRuntimeException && error !is SMBApiException)
-
-    private fun probeConnection(connection: Connection): Boolean {
-        val started = System.nanoTime()
-        var future: java.util.concurrent.Future<SMB2Echo>? = null
-        var success = false
-        try {
-            future = connection.send(SMB2Echo(connection.negotiatedProtocol.dialect))
-            future.get(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            success = true
-            return true
-        } catch (_: Exception) {
-            future?.cancel(true)
-            return false
-        } finally {
-            logPerformance("probe", started, 0L, null, count = if (success) 1 else 0)
-        }
-    }
 
     private fun join(parent: String, child: String): String = listOf(parent.trim('/'), child.trim('/'))
         .filter { it.isNotBlank() }
@@ -434,7 +464,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         val share: DiskShare,
         val verifier: IdleResourceVerifier,
     ) {
-        val readBufferSize = connection.negotiatedProtocol.maxReadSize.coerceIn(64 * 1024, 1024 * 1024)
+        val readBufferSize = smbReadBufferSize(connection.negotiatedProtocol.maxReadSize)
 
         fun isUsable() = verifier.isUsable(share.isConnected && connection.isConnected)
 
@@ -443,6 +473,8 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         fun release() = verifier.release()
 
         fun markActive() = verifier.markActive()
+
+        fun isIdle() = !verifier.hasActiveLeases()
 
         fun close() {
             runCatching { share.close() }
@@ -454,7 +486,13 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
 
     private companion object {
         const val TAG = "SmbFileSource"
-        const val PROBE_TIMEOUT_SECONDS = 1L
-        val IDLE_PROBE_NANOS = TimeUnit.SECONDS.toNanos(5)
+        const val READ_AHEAD_REQUESTS = 4
+        const val PIPELINED_COPY_MIN_BYTES = 4L * 1024 * 1024
+        val IDLE_RECONNECT_NANOS = TimeUnit.SECONDS.toNanos(5)
     }
+
+    private data class PendingRead(
+        val length: Int,
+        val future: java.util.concurrent.Future<com.hierynomus.mssmb2.messages.SMB2ReadResponse>,
+    )
 }

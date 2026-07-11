@@ -9,41 +9,48 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SmbRetryTest {
     @Test
+    fun `negotiated SMB reads are capped at one MiB for pipelining`() {
+        assertEquals(1024 * 1024, smbReadBufferSize(8 * 1024 * 1024))
+    }
+
+    @Test
     fun `fresh connection is reused without probe`() {
         var now = 0L
-        var probes = 0
-        val verifier = IdleResourceVerifier(clockNanos = { now }, idleNanos = 5_000_000_000L) {
-            probes++
-            true
-        }
+        val verifier = IdleResourceVerifier(clockNanos = { now }, idleNanos = 5_000_000_000L)
 
         assertTrue(verifier.isUsable(connected = true))
-        assertEquals(0, probes)
     }
 
     @Test
-    fun `successful idle probe refreshes verification time`() {
+    fun `idle connection is replaced without touching stale socket`() {
         var now = 0L
-        var probes = 0
-        val verifier = IdleResourceVerifier(clockNanos = { now }, idleNanos = 5_000_000_000L) {
-            probes++
-            true
-        }
+        val verifier = IdleResourceVerifier(clockNanos = { now }, idleNanos = 5_000_000_000L)
 
         now = 6_000_000_000L
-        assertTrue(verifier.isUsable(connected = true))
-        now = 10_000_000_000L
-        assertTrue(verifier.isUsable(connected = true))
 
-        assertEquals(1, probes)
+        assertFalse(verifier.isUsable(connected = true))
     }
 
     @Test
-    fun `failed idle probe makes resource reconnect`() {
+    fun `successful activity refreshes idle lifetime`() {
+        var now = 0L
+        val verifier = IdleResourceVerifier(clockNanos = { now }, idleNanos = 5_000_000_000L)
+
+        now = 4_000_000_000L
+        verifier.markActive()
+        now = 8_000_000_000L
+        assertTrue(verifier.isUsable(connected = true))
+        now = 10_000_000_000L
+        assertFalse(verifier.isUsable(connected = true))
+    }
+
+    @Test
+    fun `idle resource reconnects after active lease releases`() {
         var now = 0L
         var created = 0
         val closed = mutableListOf<Int>()
@@ -51,7 +58,7 @@ class SmbRetryTest {
         val resources = ReusableResource(
             factory = {
                 val id = ++created
-                Resource(id, IdleResourceVerifier({ now }, 5_000_000_000L) { id > 1 })
+                Resource(id, IdleResourceVerifier({ now }, 5_000_000_000L))
             },
             usable = { it.verifier.isUsable(connected = true) },
             close = { closed += it.id },
