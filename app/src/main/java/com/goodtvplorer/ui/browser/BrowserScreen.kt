@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -55,6 +56,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -234,6 +236,7 @@ private fun SortMenuButton(sort: BrowserSort, onSortChange: (BrowserSort) -> Uni
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit, onFocusChange: (Boolean) -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
     val border = if (focused) Color(0xFFFFE3A1) else Color.Transparent
     Row(
         Modifier.width(240.dp).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26))
@@ -248,6 +251,19 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit, onFocusC
             modifier = Modifier.weight(1f).onFocusChanged {
                 focused = it.isFocused
                 onFocusChange(it.isFocused)
+            }.onPreviewKeyEvent {
+                if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (it.key) {
+                    Key.DirectionUp -> {
+                        focusManager.moveFocus(FocusDirection.Up)
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        focusManager.moveFocus(FocusDirection.Down)
+                        true
+                    }
+                    else -> false
+                }
             }.semantics { contentDescription = "搜索当前目录" },
             singleLine = true,
             textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 18.sp),
