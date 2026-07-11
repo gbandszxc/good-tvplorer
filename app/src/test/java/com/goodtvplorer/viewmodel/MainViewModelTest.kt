@@ -13,8 +13,52 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class MainViewModelTest {
+    @Test
+    fun `browser items keep directories first and sort each group by selected field`() {
+        val directory = fileItem("Zoo", FileKind.Directory, size = null, modifiedAtMillis = 3L)
+        val small = fileItem("alpha.txt", FileKind.Text, size = 10L, modifiedAtMillis = 1L)
+        val large = fileItem("Beta.txt", FileKind.Text, size = 20L, modifiedAtMillis = 2L)
+
+        val sorted = filterAndSortBrowserItems(
+            listOf(large, small, directory),
+            query = "",
+            sort = BrowserSort(BrowserSortField.Size, SortDirection.Descending),
+        )
+
+        assertEquals(listOf(directory, large, small), sorted)
+    }
+
+    @Test
+    fun `browser items sort names both ways and treat missing sizes as zero`() {
+        val alpha = fileItem("Alpha", FileKind.Text, size = null, modifiedAtMillis = null)
+        val beta = fileItem("beta", FileKind.Text, size = 10L, modifiedAtMillis = null)
+
+        assertEquals(listOf(alpha, beta), filterAndSortBrowserItems(listOf(beta, alpha), "", BrowserSort(BrowserSortField.Name, SortDirection.Ascending)))
+        assertEquals(listOf(beta, alpha), filterAndSortBrowserItems(listOf(alpha, beta), "", BrowserSort(BrowserSortField.Name, SortDirection.Descending)))
+        assertEquals(listOf(alpha, beta), filterAndSortBrowserItems(listOf(beta, alpha), "", BrowserSort(BrowserSortField.Size, SortDirection.Ascending)))
+    }
+
+    @Test
+    fun `browser items search names without case sensitivity`() {
+        val matching = fileItem("Movie.MKV", FileKind.Video, size = 1L, modifiedAtMillis = 1L)
+        val chinese = fileItem("电影.jpg", FileKind.Image, size = 2L, modifiedAtMillis = 2L)
+
+        assertEquals(listOf(matching), filterAndSortBrowserItems(listOf(matching, chinese), "movie", BrowserSort()))
+        assertEquals(listOf(chinese), filterAndSortBrowserItems(listOf(matching, chinese), "电影", BrowserSort()))
+        assertTrue(filterAndSortBrowserItems(listOf(matching, chinese), "missing", BrowserSort()).isEmpty())
+    }
+
+    @Test
+    fun `browser items sort modification time in ascending and descending order`() {
+        val old = fileItem("old", FileKind.Text, size = null, modifiedAtMillis = 1L)
+        val new = fileItem("new", FileKind.Text, size = null, modifiedAtMillis = 2L)
+
+        assertEquals(listOf(old, new), filterAndSortBrowserItems(listOf(new, old), "", BrowserSort(BrowserSortField.ModifiedTime, SortDirection.Ascending)))
+        assertEquals(listOf(new, old), filterAndSortBrowserItems(listOf(old, new), "", BrowserSort(BrowserSortField.ModifiedTime, SortDirection.Descending)))
+    }
     @Test
     fun entered_path_stays_in_current_source() {
         assertEquals("Movies/2024", resolveBrowserPath("Movies", "2024"))
@@ -150,6 +194,14 @@ class MainViewModelTest {
         kind = FileKind.Image,
         size = 1L,
         modifiedAtMillis = 2L,
+    )
+
+    private fun fileItem(name: String, kind: FileKind, size: Long?, modifiedAtMillis: Long?) = FileItem(
+        name = name,
+        handle = FileHandle("local", SourceKind.Local, name),
+        kind = kind,
+        size = size,
+        modifiedAtMillis = modifiedAtMillis,
     )
 
     private class FakeSource : FileSource {

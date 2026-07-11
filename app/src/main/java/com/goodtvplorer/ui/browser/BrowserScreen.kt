@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -68,8 +70,12 @@ import com.goodtvplorer.domain.Formatters
 import com.goodtvplorer.ui.components.TvButton
 import com.goodtvplorer.ui.components.tvOkClick
 import com.goodtvplorer.viewmodel.BrowserState
+import com.goodtvplorer.viewmodel.BrowserSort
+import com.goodtvplorer.viewmodel.BrowserSortField
 import com.goodtvplorer.viewmodel.BrowserViewMode
 import com.goodtvplorer.viewmodel.MainViewModel
+import com.goodtvplorer.viewmodel.SortDirection
+import com.goodtvplorer.viewmodel.filterAndSortBrowserItems
 import java.io.File
 
 @Composable
@@ -78,23 +84,30 @@ fun BrowserScreen(
     state: BrowserState,
     thumbnails: Map<String, File>,
     viewMode: BrowserViewMode,
+    sort: BrowserSort,
+    searchQuery: String,
     focusAnchorPath: String?,
     onOpen: (FileItem) -> Unit,
     onOpenPath: (String) -> Unit,
+    onSortChange: (BrowserSort) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
-    val defaultFocusedPath = remember(state.items, focusAnchorPath) {
-        state.items.firstOrNull { it.handle.path == focusAnchorPath }?.handle?.path
-            ?: state.items.firstOrNull()?.handle?.path
+    val visibleItems = remember(state.items, searchQuery, sort) {
+        filterAndSortBrowserItems(state.items, searchQuery, sort)
     }
-    var focusedItem by remember(state.items, defaultFocusedPath) {
-        mutableStateOf(state.items.firstOrNull { it.handle.path == defaultFocusedPath })
+    val defaultFocusedPath = remember(visibleItems, focusAnchorPath) {
+        visibleItems.firstOrNull { it.handle.path == focusAnchorPath }?.handle?.path
+            ?: visibleItems.firstOrNull()?.handle?.path
     }
-    val preview = focusedItem ?: state.items.firstOrNull()
+    var focusedItem by remember(visibleItems, defaultFocusedPath) {
+        mutableStateOf(visibleItems.firstOrNull { it.handle.path == defaultFocusedPath })
+    }
+    val preview = focusedItem ?: visibleItems.firstOrNull()
 
     Column(Modifier.fillMaxSize()) {
-        BrowserToolbar(path, onOpenPath)
+        BrowserToolbar(path, sort, searchQuery, onOpenPath, onSortChange, onSearchQueryChange)
         Row(
             Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -104,13 +117,14 @@ fun BrowserScreen(
                     state.loading -> LoadingPanel()
                     state.error != null -> MessagePanel("连接或读取失败", state.error, Color(0xFFFFA3A3))
                     state.items.isEmpty() -> MessagePanel("目录为空", "Back 返回上级，或刷新当前目录。", Color(0xFFC8D5E2))
+                    visibleItems.isEmpty() -> MessagePanel("未找到匹配项目", "尝试修改搜索词。", Color(0xFFC8D5E2))
                     viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(state.items, key = { it.handle.sourceKey + it.handle.path }) { item ->
+                        items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
                             FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                     else -> LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(state.items, key = { it.handle.sourceKey + it.handle.path }) { item ->
+                        items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
                             FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
@@ -122,7 +136,14 @@ fun BrowserScreen(
 }
 
 @Composable
-private fun BrowserToolbar(path: String, onOpenPath: (String) -> Unit) {
+private fun BrowserToolbar(
+    path: String,
+    sort: BrowserSort,
+    searchQuery: String,
+    onOpenPath: (String) -> Unit,
+    onSortChange: (BrowserSort) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+) {
     var editing by remember(path) { mutableStateOf(false) }
     var enteredPath by remember(path) { mutableStateOf(path) }
     val inputFocusRequester = remember { FocusRequester() }
@@ -133,42 +154,125 @@ private fun BrowserToolbar(path: String, onOpenPath: (String) -> Unit) {
         onOpenPath(enteredPath)
     }
 
-    BackHandler(enabled = editing) { editing = false }
+    BackHandler(enabled = editing || searchQuery.isNotBlank()) {
+        if (editing) editing = false else onSearchQueryChange("")
+    }
     LaunchedEffect(editing) {
         if (editing) inputFocusRequester.requestFocus()
     }
 
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26)).padding(horizontal = 10.dp, vertical = 3.dp),
+        Modifier.fillMaxWidth().height(40.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PathEditButton(onClick = {
-            enteredPath = path
-            editing = true
-        })
-        Spacer(Modifier.width(12.dp))
-        if (editing) {
-            BasicTextField(
-                value = enteredPath,
-                onValueChange = { enteredPath = it },
-                modifier = Modifier.weight(1f).focusRequester(inputFocusRequester).onPreviewKeyEvent {
-                    if (it.type == KeyEventType.KeyUp && it.key == Key.Enter) {
-                        submitPath()
-                        true
-                    } else {
-                        false
-                    }
-                },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 20.sp),
-                cursorBrush = SolidColor(Color(0xFFC8D5E2)),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { submitPath() }),
-            )
-        } else {
-            Text(displayPath, modifier = Modifier.weight(1f), color = Color(0xFF9FB0C2), fontSize = 20.sp, maxLines = 1)
+        SortMenuButton(sort, onSortChange)
+        Row(
+            Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26)).padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PathEditButton(onClick = {
+                enteredPath = path
+                editing = true
+            })
+            Spacer(Modifier.width(12.dp))
+            if (editing) {
+                BasicTextField(
+                    value = enteredPath,
+                    onValueChange = { enteredPath = it },
+                    modifier = Modifier.weight(1f).focusRequester(inputFocusRequester).onPreviewKeyEvent {
+                        if (it.type == KeyEventType.KeyUp && it.key == Key.Enter) {
+                            submitPath()
+                            true
+                        } else false
+                    },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 20.sp),
+                    cursorBrush = SolidColor(Color(0xFFC8D5E2)),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { submitPath() }),
+                )
+            } else {
+                Text(displayPath, modifier = Modifier.weight(1f), color = Color(0xFF9FB0C2), fontSize = 20.sp, maxLines = 1)
+            }
+        }
+        SearchField(searchQuery, onSearchQueryChange)
+    }
+}
+
+@Composable
+private fun SortMenuButton(sort: BrowserSort, onSortChange: (BrowserSort) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        ToolbarIconButton(R.drawable.ic_sort, "排序", onClick = { expanded = true })
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.background(Color(0xFF152232))) {
+            sortOptions.forEach { option ->
+                val selected = option == sort
+                DropdownMenuItem(
+                    text = { Text(option.label(), color = if (selected) Color(0xFFFFC857) else Color(0xFFF3F7FA), fontSize = 18.sp) },
+                    onClick = { onSortChange(option); expanded = false },
+                    modifier = Modifier.semantics { contentDescription = option.label() },
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val border = if (focused) Color(0xFFFFE3A1) else Color.Transparent
+    Row(
+        Modifier.width(240.dp).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26))
+            .border(BorderStroke(if (focused) 3.dp else 1.dp, border), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(R.drawable.ic_search), contentDescription = null, tint = if (focused) Color(0xFFFFC857) else Color(0xFFA8B8C7), modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused }.semantics { contentDescription = "搜索当前目录" },
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 18.sp),
+            cursorBrush = SolidColor(Color(0xFFC8D5E2)),
+            decorationBox = { innerTextField ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (query.isBlank()) Text("搜索当前目录", color = Color(0xFF728397), fontSize = 18.sp, maxLines = 1)
+                    innerTextField()
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ToolbarIconButton(iconRes: Int, description: String, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color(0xFF101A26), label = "$description-background")
+    val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "$description-tint")
+    Box(
+        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(background)
+            .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent), RoundedCornerShape(10.dp))
+            .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painterResource(iconRes), contentDescription = description, tint = tint, modifier = Modifier.size(20.dp))
+    }
+}
+
+private val sortOptions = BrowserSortField.entries.flatMap { field ->
+    SortDirection.entries.map { direction -> BrowserSort(field, direction) }
+}
+
+private fun BrowserSort.label(): String {
+    val fieldLabel = when (field) {
+        BrowserSortField.Name -> "文件名"
+        BrowserSortField.Size -> "文件大小"
+        BrowserSortField.ModifiedTime -> "最后修改时间"
+    }
+    return "$fieldLabel${if (direction == SortDirection.Ascending) " 正序" else " 倒序"}"
 }
 
 @Composable

@@ -78,9 +78,13 @@ class MainActivity : ComponentActivity() {
                                     state = state.browser,
                                     thumbnails = state.thumbnails,
                                     viewMode = state.browserViewMode,
+                                    sort = state.browserSort,
+                                    searchQuery = state.browserSearchQuery,
                                     focusAnchorPath = state.focusAnchorPath,
                                     onOpen = viewModel::openItem,
                                     onOpenPath = viewModel::openEnteredPath,
+                                    onSortChange = viewModel::setBrowserSort,
+                                    onSearchQueryChange = viewModel::setBrowserSearchQuery,
                                     onThumbnailVisible = viewModel::requestThumbnail,
                                     onThumbnailHidden = viewModel::releaseThumbnail,
                                 )

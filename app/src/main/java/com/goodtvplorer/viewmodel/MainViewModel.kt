@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import kotlin.coroutines.EmptyCoroutineContext
 
 sealed interface Screen {
@@ -44,6 +45,15 @@ sealed interface Screen {
 }
 
 enum class BrowserViewMode { List, Grid }
+
+enum class BrowserSortField { Name, Size, ModifiedTime }
+
+enum class SortDirection { Ascending, Descending }
+
+data class BrowserSort(
+    val field: BrowserSortField = BrowserSortField.Name,
+    val direction: SortDirection = SortDirection.Ascending,
+)
 
 data class BrowserState(
     val loading: Boolean = false,
@@ -77,8 +87,40 @@ data class MainUiState(
     val preview: PreviewState = PreviewState(),
     val thumbnails: Map<String, File> = emptyMap(),
     val browserViewMode: BrowserViewMode = BrowserViewMode.Grid,
+    val browserSort: BrowserSort = BrowserSort(),
+    val browserSearchQuery: String = "",
     val fontScale: Float = 1f,
 )
+
+internal fun filterAndSortBrowserItems(
+    items: List<FileItem>,
+    query: String,
+    sort: BrowserSort,
+): List<FileItem> {
+    val normalizedQuery = query.trim()
+    val itemComparator = Comparator<FileItem> { left, right ->
+        val primary = when (sort.field) {
+            BrowserSortField.Name -> compareFileNames(left, right)
+            BrowserSortField.Size -> (left.size ?: 0L).compareTo(right.size ?: 0L)
+            BrowserSortField.ModifiedTime -> (left.modifiedAtMillis ?: 0L).compareTo(right.modifiedAtMillis ?: 0L)
+        }
+        val directed = if (sort.direction == SortDirection.Descending) -primary else primary
+        if (directed != 0) {
+            directed
+        } else {
+            compareFileNames(left, right)
+                .takeIf { it != 0 }
+                ?: left.handle.path.compareTo(right.handle.path)
+        }
+    }
+    return items.asSequence()
+        .filter { normalizedQuery.isBlank() || it.name.contains(normalizedQuery, ignoreCase = true) }
+        .sortedWith(compareBy<FileItem> { it.kind != FileKind.Directory }.then(itemComparator))
+        .toList()
+}
+
+private fun compareFileNames(left: FileItem, right: FileItem): Int =
+    left.name.lowercase(Locale.ROOT).compareTo(right.name.lowercase(Locale.ROOT))
 
 internal fun navigateBack(
     state: MainUiState,
@@ -250,6 +292,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun setBrowserSort(sort: BrowserSort) {
+        _state.update { it.copy(browserSort = sort) }
+    }
+
+    fun setBrowserSearchQuery(query: String) {
+        _state.update { it.copy(browserSearchQuery = query) }
+    }
+
     fun setFontScale(value: Float) {
         viewModelScope.launch { displaySettings.setFontScale(value) }
     }
@@ -262,6 +312,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun openBrowser(sourceKey: String, path: String, forceRefresh: Boolean = false) {
         val source = sources[sourceKey] ?: return showError("文件源不存在")
         val screen = Screen.Browser(sourceKey, path)
+        val clearSearch = _state.value.screen != screen
         val focusAnchorPath = navigation.focusAnchorFor(sourceKey, path)
         navigation.recordLocation(sourceKey, path, System.currentTimeMillis())
         browserJob?.cancel()
@@ -269,10 +320,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         cancelThumbnailRequests()
         if (forceRefresh) browserCache.remove(screen)
         browserCache[screen]?.let { cached ->
-            _state.update { it.copy(screen = screen, browser = cached, focusAnchorPath = focusAnchorPath) }
+            _state.update {
+                it.copy(
+                    screen = screen,
+                    browser = cached,
+                    focusAnchorPath = focusAnchorPath,
+                    browserSearchQuery = if (clearSearch) "" else it.browserSearchQuery,
+                )
+            }
             return
         }
-        _state.update { it.copy(screen = screen, browser = BrowserState(loading = true), focusAnchorPath = focusAnchorPath) }
+        _state.update {
+            it.copy(
+                screen = screen,
+                browser = BrowserState(loading = true),
+                focusAnchorPath = focusAnchorPath,
+                browserSearchQuery = if (clearSearch) "" else it.browserSearchQuery,
+            )
+        }
         browserJob = viewModelScope.launch {
             try {
                 val items = source.list(path)
