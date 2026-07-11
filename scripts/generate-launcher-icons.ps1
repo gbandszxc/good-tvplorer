@@ -9,15 +9,17 @@ if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
     throw "找不到图标原图：$Source"
 }
 
-function Save-Icon([System.Drawing.Image]$Image, [string]$Destination, [int]$Size) {
-    $bitmap = [System.Drawing.Bitmap]::new($Size, $Size)
+function Save-Icon([System.Drawing.Image]$Image, [string]$Destination, [int]$CanvasSize, [int]$ImageSize = $CanvasSize) {
+    $bitmap = [System.Drawing.Bitmap]::new($CanvasSize, $CanvasSize)
     try {
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
         try {
             $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
             $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
             $graphics.CompositingQuality = [System.Drawing.Drawing2D.CompositingQuality]::HighQuality
-            $graphics.DrawImage($Image, 0, 0, $Size, $Size)
+            $graphics.Clear([System.Drawing.Color]::Transparent)
+            $offset = ($CanvasSize - $ImageSize) / 2
+            $graphics.DrawImage($Image, $offset, $offset, $ImageSize, $ImageSize)
             $bitmap.Save($Destination, [System.Drawing.Imaging.ImageFormat]::Png)
         } finally {
             $graphics.Dispose()
@@ -34,6 +36,7 @@ try {
     }
 
     $root = Join-Path $PSScriptRoot "..\app\src\main\res"
+    $adaptiveForegroundDp = 80
     $densities = @{
         mdpi = @(48, 108)
         hdpi = @(72, 162)
@@ -46,7 +49,8 @@ try {
         $drawable = Join-Path $root "drawable-$($density.Key)"
         New-Item -ItemType Directory -Force $mipmap, $drawable | Out-Null
         Save-Icon $image (Join-Path $mipmap "ic_launcher.png") $density.Value[0]
-        Save-Icon $image (Join-Path $drawable "ic_launcher_foreground.png") $density.Value[1]
+        $foregroundSize = [math]::Round($density.Value[1] * $adaptiveForegroundDp / 108)
+        Save-Icon $image (Join-Path $drawable "ic_launcher_foreground.png") $density.Value[1] $foregroundSize
     }
 } finally {
     $image.Dispose()
