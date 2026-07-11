@@ -30,9 +30,17 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 
 @Composable
-fun TvButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+fun TvButton(
+    text: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 28.dp, vertical = 18.dp),
+    fontSize: TextUnit = 24.sp,
+    onClick: () -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     val isFocused = enabled && focused
     val bg by animateColorAsState(if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, label = "button-bg")
@@ -47,9 +55,9 @@ fun TvButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = tru
             .background(bg)
             .border(BorderStroke(border, if (isFocused) Color(0xFFFFE3A1) else Color(0xFF26384B)), RoundedCornerShape(8.dp))
             .then(if (enabled) Modifier.onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick) else Modifier)
-            .padding(PaddingValues(horizontal = 28.dp, vertical = 18.dp))
+            .padding(contentPadding)
     ) {
-        Text(text, color = fg, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, color = fg, fontSize = fontSize, fontWeight = FontWeight.SemiBold)
     }
 }
 

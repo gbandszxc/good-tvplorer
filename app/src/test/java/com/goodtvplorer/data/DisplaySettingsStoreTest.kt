@@ -13,4 +13,8 @@ class DisplaySettingsStoreTest {
         assertEquals(0.8f, nextFontScale(0.8f, -0.05f), 0.0001f)
         assertEquals(1.2f, nextFontScale(1.2f, 0.05f), 0.0001f)
     }
+
+    @Test
+    fun font_scale_percent_rounds_105_percent_without_truncating() =
+        assertEquals(105, fontScalePercent(1.05f))
 }
