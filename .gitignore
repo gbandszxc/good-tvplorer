@@ -1,6 +1,42 @@
+# Gradle / Kotlin
 .gradle/
 .kotlin/
 **/build/
+
+# Local configuration
 local.properties
-*.iml
+secrets.properties
+key.properties
+
+# IDE / Android Studio
 .idea/
+*.iml
+.navigation/
+/shelf/
+
+# Native build (CMake/ndk-build)
+.cxx/
+.externalNativeBuild/
+
+# Signing / credentials
+*.jks
+*.keystore
+*.pem
+
+# Build outputs & packaging
+*.apk
+*.aab
+*.ap_
+output.json
+/captures/
+
+# Logs & diagnostics
+*.log
+*.hprof
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Project-specific cache
+thumb_cache/
