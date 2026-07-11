@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                                     searchLoading = state.browserSearchLoading,
                                     focusAnchorPath = state.focusAnchorPath,
                                     onOpen = viewModel::openItem,
+                                    onNavigateUp = viewModel::goBack,
                                     onOpenPath = viewModel::openEnteredPath,
                                     onSortChange = viewModel::setBrowserSort,
                                     onSearchQueryChange = viewModel::setBrowserSearchQuery,

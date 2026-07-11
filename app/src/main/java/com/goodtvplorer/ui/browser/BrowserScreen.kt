@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -92,6 +93,7 @@ fun BrowserScreen(
     searchLoading: Boolean,
     focusAnchorPath: String?,
     onOpen: (FileItem) -> Unit,
+    onNavigateUp: () -> Unit,
     onOpenPath: (String) -> Unit,
     onSortChange: (BrowserSort) -> Unit,
     onSearchQueryChange: (String) -> Unit,
@@ -112,6 +114,7 @@ fun BrowserScreen(
         mutableStateOf(visibleItems.firstOrNull { it.handle.path == defaultFocusedPath })
     }
     val preview = focusedItem ?: visibleItems.firstOrNull()
+    val focusNavigateUp = !state.loading && state.error == null && state.items.isEmpty() && !searchHasFocus
 
     Column(Modifier.fillMaxSize()) {
         BrowserToolbar(
@@ -132,17 +135,30 @@ fun BrowserScreen(
                 when {
                     state.loading -> LoadingPanel()
                     state.error != null -> MessagePanel("连接或读取失败", state.error, Color(0xFFFFA3A3))
-                    state.items.isEmpty() -> MessagePanel("目录为空", "Back 返回上级，或刷新当前目录。", Color(0xFFC8D5E2))
-                    visibleItems.isEmpty() && searchLoading -> MessagePanel("正在递归搜索", "正在检索当前目录及其子目录。", Color(0xFFC8D5E2))
-                    visibleItems.isEmpty() -> MessagePanel("未找到匹配项目", "尝试修改搜索词。", Color(0xFFC8D5E2))
                     viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && !suppressContentAnchorFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                        item(key = "navigate-up") {
+                            NavigateUpRow(initiallyFocused = focusNavigateUp, onClick = onNavigateUp)
+                        }
+                        when {
+                            state.items.isEmpty() -> item { InlineMessage("目录为空", "选择返回上一级，或刷新当前目录。") }
+                            visibleItems.isEmpty() && searchLoading -> item { InlineMessage("正在递归搜索", "正在检索当前目录及其子目录。") }
+                            visibleItems.isEmpty() -> item { InlineMessage("未找到匹配项目", "尝试修改搜索词。") }
+                            else -> items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
+                                FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && !suppressContentAnchorFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            }
                         }
                     }
                     else -> LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && !suppressContentAnchorFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                        item(key = "navigate-up") {
+                            NavigateUpTile(initiallyFocused = focusNavigateUp, onClick = onNavigateUp)
+                        }
+                        when {
+                            state.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("目录为空", "选择返回上一级，或刷新当前目录。") }
+                            visibleItems.isEmpty() && searchLoading -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("正在递归搜索", "正在检索当前目录及其子目录。") }
+                            visibleItems.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("未找到匹配项目", "尝试修改搜索词。") }
+                            else -> items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
+                                FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && !suppressContentAnchorFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            }
                         }
                     }
                 }
@@ -363,6 +379,40 @@ private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileI
             }
             Text(kindLabel(item.kind), color = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), fontSize = 16.sp)
         }
+    }
+}
+
+@Composable
+private fun NavigateUpRow(initiallyFocused: Boolean, onClick: () -> Unit) {
+    FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus = {}, onClick = onClick) { focused ->
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(painterResource(R.drawable.ic_back), contentDescription = null, tint = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), modifier = Modifier.size(48.dp))
+            Text("返回上一级", color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun NavigateUpTile(initiallyFocused: Boolean, onClick: () -> Unit) {
+    FocusSurface(Modifier.fillMaxWidth().aspectRatio(16f / 10f), initiallyFocused, onFocus = {}, onClick = onClick) { focused ->
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(if (focused) Color(0xFFE7B94F) else Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
+                Icon(painterResource(R.drawable.ic_back), contentDescription = null, tint = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), modifier = Modifier.size(34.dp))
+            }
+            Text("返回上一级", color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun InlineMessage(title: String, body: String) {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(title, color = Color(0xFFC8D5E2), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Text(body, color = Color(0xFFA8B8C7), fontSize = 18.sp)
     }
 }
 
