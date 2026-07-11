@@ -20,6 +20,8 @@ class MainViewModelTest {
         assertEquals("Movies/2024", resolveBrowserPath("Movies", "2024"))
         assertEquals("Pictures", resolveBrowserPath("Movies/2024", "/Pictures"))
         assertEquals("/storage/emulated/0/Movies/2024", resolveBrowserPath("/storage/emulated/0/Movies", "2024"))
+        assertEquals("/Pictures", resolveBrowserPath("/storage/emulated/0/Movies", "/Pictures/"))
+        assertEquals("/", resolveBrowserPath("/storage/emulated/0/Movies", "/"))
     }
 
     @Test
