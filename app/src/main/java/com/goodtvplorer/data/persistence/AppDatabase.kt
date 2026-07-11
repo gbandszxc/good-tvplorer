@@ -122,8 +122,8 @@ object AppDatabaseProvider {
     }
 }
 
-class SmbConnectionRepository(context: Context) {
-    private val database = AppDatabaseProvider.get(context)
+class SmbConnectionRepository internal constructor(private val database: AppDatabase) {
+    constructor(context: Context) : this(AppDatabaseProvider.get(context))
     private val connections = database.smbConnectionDao()
     private val navigation = database.browserNavigationDao()
 
@@ -159,18 +159,8 @@ class DisplaySettingsRepository(context: Context) {
     }
 }
 
-data class BrowserNavigationSnapshot(
-    val locations: List<BrowserLocationEntity>,
-    val focusAnchors: List<BrowserFocusAnchorEntity>,
-)
-
 class BrowserNavigationRepository(context: Context) {
     private val navigation = AppDatabaseProvider.get(context).browserNavigationDao()
-
-    suspend fun restore(): BrowserNavigationSnapshot = BrowserNavigationSnapshot(
-        locations = navigation.locations(),
-        focusAnchors = navigation.focusAnchors(),
-    )
 
     suspend fun locationFor(sourceKey: String): BrowserLocationEntity? = navigation.locationFor(sourceKey)
 

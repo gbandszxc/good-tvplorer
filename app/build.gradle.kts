@@ -24,6 +24,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -75,6 +76,10 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")
     implementation("com.hierynomus:smbj:0.14.0")
     testImplementation(kotlin("test-junit"))
+    androidTestImplementation("androidx.room:room-testing:2.8.3")
+    androidTestImplementation("androidx.test:core-ktx:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 

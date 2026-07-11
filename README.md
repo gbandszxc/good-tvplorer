@@ -7,7 +7,7 @@
 ![minSdk](https://img.shields.io/badge/minSdk-23-3DDC84)
 ![targetSdk](https://img.shields.io/badge/targetSdk-36-3DDC84)
 
-> ⚠️ **安全提示**：当前版本为 MVP，SMB 密码以明文存储在 DataStore Preferences 中。请勿在不可信设备上保存重要凭据，加密方案已列入后续计划。
+> ⚠️ **安全提示**：当前版本为 MVP，SMB 密码以明文存储在应用 SQLite 数据库中。请勿在不可信设备上保存重要凭据，加密方案已列入后续计划。
 
 ---
 
@@ -19,7 +19,8 @@
 - **媒体预览**：图片、视频缩略图、音频封面与播放、文本预览（UTF-8，最多 1MB）。
 - **列表 / 网格双模式**：右侧实时预览当前焦点文件。
 - **连接管理与显示设置**：独立横屏页面管理 SMB 新增、编辑、删除；显示设置提供字体缩放。
-- **现代 Android 技术栈**：Kotlin + Jetpack Compose + Material3 + Media3 + Coil3。
+- **统一持久化**：Room + SQLite 统一保存连接、设置和浏览恢复状态。
+- **现代 Android 技术栈**：Kotlin + Jetpack Compose + Material3 + Room + Media3 + Coil3。
 
 ## 界面示意
 
@@ -118,7 +119,8 @@ adb uninstall com.goodtvplorer                # 卸载
 .
 ├── app/
 │   ├── src/main/java/com/goodtvplorer/
-│   │   ├── data/            # 文件源抽象、本地/SMB 实现、数据模型、连接持久化
+│   │   ├── data/            # 文件源抽象、本地/SMB 实现、数据模型
+│   │   │   └── persistence/ # Room 数据库、DAO 与统一存储仓库
 │   │   ├── domain/          # 缩略图、缓存、文件类型识别、自定义 Coil Fetcher
 │   │   ├── ui/              # Compose 屏幕与组件、主题
 │   │   ├── viewmodel/       # MainViewModel、UI 状态与导航

@@ -72,7 +72,7 @@ data class PreviewState(
 data class MainUiState(
     val screen: Screen = Screen.Browser("local", ""),
     val smbConnections: List<SmbConnectionInfo> = emptyList(),
-    val browser: BrowserState = BrowserState(),
+    val browser: BrowserState = BrowserState(loading = true),
     val focusAnchorPath: String? = null,
     val preview: PreviewState = PreviewState(),
     val thumbnails: Map<String, File> = emptyMap(),
