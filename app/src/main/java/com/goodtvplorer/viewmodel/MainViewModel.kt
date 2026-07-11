@@ -141,6 +141,12 @@ internal suspend fun loadCachedImageModel(
     cache: suspend (FileSource, FileItem) -> File,
 ): ImageModel = ImageModel(source, item, cache(source, item))
 
+internal fun resolveBrowserPath(currentPath: String, enteredPath: String): String {
+    val cleaned = enteredPath.trim().replace('\\', '/').trim('/')
+    return if (enteredPath.trim().startsWith('/')) cleaned else listOf(currentPath.trim('/'), cleaned)
+        .filter(String::isNotBlank).joinToString("/")
+}
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val local = LocalFileSource(app)
     private val store = SmbConnectionStore(app)
@@ -216,6 +222,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setFontScale(value: Float) {
         viewModelScope.launch { display.setFontScale(value) }
+    }
+
+    fun openEnteredPath(path: String) {
+        val screen = _state.value.screen as? Screen.Browser ?: return
+        openBrowser(screen.sourceKey, resolveBrowserPath(screen.path, path))
     }
 
     fun openBrowser(sourceKey: String, path: String, forceRefresh: Boolean = false) {

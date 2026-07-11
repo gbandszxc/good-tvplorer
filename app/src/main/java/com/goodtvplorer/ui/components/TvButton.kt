@@ -32,19 +32,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun TvButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun TvButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val bg by animateColorAsState(if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, label = "button-bg")
-    val fg by animateColorAsState(if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, label = "button-fg")
-    val border by animateDpAsState(if (focused) 3.dp else 1.dp, label = "button-border")
+    val isFocused = enabled && focused
+    val bg by animateColorAsState(if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, label = "button-bg")
+    val fg by animateColorAsState(
+        if (enabled) if (isFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        label = "button-fg",
+    )
+    val border by animateDpAsState(if (isFocused) 3.dp else 1.dp, label = "button-border")
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
-            .border(BorderStroke(border, if (focused) Color(0xFFFFE3A1) else Color(0xFF26384B)), RoundedCornerShape(8.dp))
-            .onFocusChanged { focused = it.isFocused }
-            .focusable()
-            .tvOkClick(onClick)
+            .border(BorderStroke(border, if (isFocused) Color(0xFFFFE3A1) else Color(0xFF26384B)), RoundedCornerShape(8.dp))
+            .then(if (enabled) Modifier.onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick) else Modifier)
             .padding(PaddingValues(horizontal = 28.dp, vertical = 18.dp))
     ) {
         Text(text, color = fg, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)

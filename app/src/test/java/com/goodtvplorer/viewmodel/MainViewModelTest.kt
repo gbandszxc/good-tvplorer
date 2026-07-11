@@ -16,6 +16,12 @@ import kotlin.test.assertSame
 
 class MainViewModelTest {
     @Test
+    fun entered_path_stays_in_current_source() {
+        assertEquals("Movies/2024", resolveBrowserPath("Movies", "2024"))
+        assertEquals("Pictures", resolveBrowserPath("Movies/2024", "/Pictures"))
+    }
+
+    @Test
     fun `image preview retains selected thumbnail before cancelling other work`() {
         val events = mutableListOf<String>()
 
