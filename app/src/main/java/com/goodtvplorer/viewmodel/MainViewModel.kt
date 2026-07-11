@@ -50,6 +50,14 @@ data class BrowserState(
     val error: String? = null,
 )
 
+internal class BrowserMemoryCache {
+    private val states = mutableMapOf<Screen.Browser, BrowserState>()
+    operator fun get(screen: Screen.Browser): BrowserState? = states[screen]
+    operator fun set(screen: Screen.Browser, state: BrowserState) { states[screen] = state }
+    fun remove(screen: Screen.Browser) { states.remove(screen) }
+    fun clear() = states.clear()
+}
+
 data class PreviewState(
     val loading: Boolean = false,
     val file: File? = null,
@@ -70,6 +78,69 @@ data class MainUiState(
     val fontScale: Float = 0.85f,
 )
 
+internal fun navigateBack(
+    state: MainUiState,
+    openHome: () -> Unit,
+    openBrowser: (sourceKey: String, path: String) -> Unit,
+    restore: (MainUiState) -> Unit,
+) {
+    when (val screen = state.screen) {
+        Screen.Home -> Unit
+        is Screen.Browser -> {
+            val parent = screen.path.trim('/').substringBeforeLast('/', "")
+            if (screen.path.isBlank()) openHome() else openBrowser(screen.sourceKey, parent)
+        }
+        is Screen.ImagePreview -> restore(
+            state.copy(
+                screen = Screen.Browser(screen.sourceKey, screen.path.substringBeforeLast('/', "")),
+                preview = PreviewState(),
+            ),
+        )
+        is Screen.TextPreview, is Screen.AudioPreview, is Screen.VideoPreview -> {
+            val current = when (screen) {
+                is Screen.TextPreview -> screen.path
+                is Screen.AudioPreview -> screen.path
+                is Screen.VideoPreview -> screen.path
+            }
+            openBrowser(
+                when (screen) {
+                    is Screen.TextPreview -> screen.sourceKey
+                    is Screen.AudioPreview -> screen.sourceKey
+                    is Screen.VideoPreview -> screen.sourceKey
+                },
+                current.substringBeforeLast('/', ""),
+            )
+        }
+    }
+}
+
+internal fun prepareImageThumbnailWork(
+    key: String,
+    requestThumbnailWork: () -> Boolean,
+    cancelAllExcept: (String) -> Unit,
+    clearBatch: () -> Unit,
+): Boolean {
+    val held = requestThumbnailWork()
+    cancelAllExcept(key)
+    clearBatch()
+    return held
+}
+
+internal fun restoreImagePreview(
+    state: MainUiState,
+    cancelPreview: () -> Unit,
+    restore: (MainUiState) -> Unit,
+) {
+    cancelPreview()
+    restore(state)
+}
+
+internal suspend fun loadCachedImageModel(
+    source: FileSource,
+    item: FileItem,
+    cache: suspend (FileSource, FileItem) -> File,
+): ImageModel = ImageModel(source, item, cache(source, item))
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val local = LocalFileSource(app)
     private val store = SmbConnectionStore(app)
@@ -77,7 +148,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val thumbnails = ThumbnailRepository(app)
     private val audioCache = AudioCacheManager(app)
     private val sources = mutableMapOf<String, FileSource>(local.key to local)
+    private val thumbnailSources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailRequests = RefCountedRequestRegistry(viewModelScope)
+    private val browserCache = BrowserMemoryCache()
     private val thumbnailSemaphore = Semaphore(3)
     private val pendingThumbnails = mutableMapOf<String, File>()
     private var thumbnailBatchJob: Job? = null
@@ -92,10 +165,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 browserJob?.cancel()
                 previewJob?.cancel()
                 cancelThumbnailRequests()
+                browserCache.clear()
                 val oldSources = sources.values.filterIsInstance<SmbFileSource>()
+                val oldThumbnailSources = thumbnailSources.values.filterIsInstance<SmbFileSource>()
                 sources.keys.filter { it.startsWith("smb:") }.forEach { sources.remove(it) }
-                withContext(Dispatchers.IO) { oldSources.forEach(SmbFileSource::close) }
-                connections.forEach { info -> sources["smb:${info.id}"] = SmbFileSource(info) }
+                thumbnailSources.keys.filter { it.startsWith("smb:") }.forEach { thumbnailSources.remove(it) }
+                withContext(Dispatchers.IO) {
+                    oldSources.forEach(SmbFileSource::close)
+                    oldThumbnailSources.forEach(SmbFileSource::close)
+                }
+                connections.forEach { info ->
+                    sources["smb:${info.id}"] = SmbFileSource(info)
+                    thumbnailSources["smb:${info.id}"] = SmbFileSource(info)
+                }
                 _state.update { it.copy(smbConnections = connections) }
             }
         }
@@ -123,7 +205,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refresh() {
         val screen = _state.value.screen as? Screen.Browser ?: return
-        openBrowser(screen.sourceKey, screen.path)
+        openBrowser(screen.sourceKey, screen.path, forceRefresh = true)
     }
 
     fun toggleBrowserViewMode() {
@@ -136,20 +218,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { display.setFontScale(value) }
     }
 
-    fun openBrowser(sourceKey: String, path: String) {
+    fun openBrowser(sourceKey: String, path: String, forceRefresh: Boolean = false) {
         val source = sources[sourceKey] ?: return showError("文件源不存在")
+        val screen = Screen.Browser(sourceKey, path)
         browserJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()
-        _state.update { it.copy(screen = Screen.Browser(sourceKey, path), browser = BrowserState(loading = true)) }
+        if (forceRefresh) browserCache.remove(screen)
+        browserCache[screen]?.let { cached ->
+            _state.update { it.copy(screen = screen, browser = cached) }
+            return
+        }
+        _state.update { it.copy(screen = screen, browser = BrowserState(loading = true)) }
         browserJob = viewModelScope.launch {
             try {
                 val items = source.list(path)
-                if (_state.value.screen == Screen.Browser(sourceKey, path)) {
+                if (_state.value.screen == screen) {
                     val thumbnailKeys = items.asSequence().filter { it.kind == FileKind.Image }.map(::thumbKey).toSet()
+                    val browser = BrowserState(items = items)
+                    browserCache[screen] = browser
                     _state.update {
                         it.copy(
-                            browser = BrowserState(items = items),
+                            browser = browser,
                             thumbnails = it.thumbnails.filterKeys(thumbnailKeys::contains),
                         )
                     }
@@ -157,7 +247,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                if (_state.value.screen == Screen.Browser(sourceKey, path)) {
+                if (_state.value.screen == screen) {
                     _state.update { it.copy(browser = BrowserState(error = readable(error))) }
                 }
             }
@@ -176,59 +266,72 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestThumbnail(item: FileItem) {
-        if (item.kind != FileKind.Image) return
+        requestThumbnailWork(item)
+    }
+
+    private fun requestThumbnailWork(item: FileItem): Boolean {
+        if (item.kind != FileKind.Image) return false
         val key = thumbKey(item)
-        if (_state.value.thumbnails.containsKey(key) || pendingThumbnails.containsKey(key)) return
-        val source = sources[item.handle.sourceKey] ?: return
+        if (_state.value.thumbnails.containsKey(key) || pendingThumbnails.containsKey(key)) return false
+        val source = thumbnailSources[item.handle.sourceKey] ?: return false
         thumbnailRequests.request(key) {
             thumbnailSemaphore.withPermit { thumbnails.thumbnailFile(source, item) }
                 ?.let { queueThumbnail(key, it) }
         }
+        return true
     }
 
     fun releaseThumbnail(item: FileItem) {
         thumbnailRequests.release(thumbKey(item))
     }
 
-    fun goBack() {
-        when (val screen = _state.value.screen) {
-            Screen.Home -> Unit
-            is Screen.Browser -> {
-                val parent = screen.path.trim('/').substringBeforeLast('/', "")
-                if (screen.path.isBlank()) openHome() else openBrowser(screen.sourceKey, parent)
-            }
-            is Screen.ImagePreview, is Screen.TextPreview, is Screen.AudioPreview, is Screen.VideoPreview -> {
-                val current = when (screen) {
-                    is Screen.ImagePreview -> screen.path
-                    is Screen.TextPreview -> screen.path
-                    is Screen.AudioPreview -> screen.path
-                    is Screen.VideoPreview -> screen.path
-                }
-                openBrowser(
-                    sourceKey = when (screen) {
-                        is Screen.ImagePreview -> screen.sourceKey
-                        is Screen.TextPreview -> screen.sourceKey
-                        is Screen.AudioPreview -> screen.sourceKey
-                        is Screen.VideoPreview -> screen.sourceKey
-                    },
-                    path = current.substringBeforeLast('/', ""),
-                )
-            }
-        }
+    fun goBack() = navigateBack(_state.value, ::openHome, { sourceKey, path -> openBrowser(sourceKey, path) }) { state ->
+        restoreImagePreview(
+            state = state,
+            cancelPreview = {
+                previewJob?.cancel()
+                previewJob = null
+            },
+            restore = { _state.value = it },
+        )
     }
 
     private fun prepareImage(item: FileItem) {
         val source = sources[item.handle.sourceKey] ?: return showError("文件源不存在")
+        val screen = Screen.ImagePreview(item.handle.sourceKey, item.handle.path, item.name)
         previewJob?.cancel()
-        cancelThumbnailRequests()
+        previewJob = null
+        val key = thumbKey(item)
+        val holdsThumbnail = prepareImageThumbnailWork(
+            key = key,
+            requestThumbnailWork = { requestThumbnailWork(item) },
+            cancelAllExcept = thumbnailRequests::cancelAllExcept,
+            clearBatch = ::clearThumbnailBatch,
+        )
         _state.update {
             it.copy(
-                screen = Screen.ImagePreview(item.handle.sourceKey, item.handle.path, item.name),
+                screen = screen,
                 preview = PreviewState(
-                    image = ImageModel(source, item),
+                    loading = true,
                     placeholder = it.thumbnails[thumbKey(item)],
                 ),
             )
+        }
+        previewJob = viewModelScope.launch {
+            try {
+                val image = loadCachedImageModel(source, item, thumbnails::cachedImageFile)
+                if (_state.value.screen == screen) {
+                    _state.update { it.copy(preview = PreviewState(image = image, placeholder = it.preview.placeholder)) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (_state.value.screen == screen) {
+                    _state.update { it.copy(preview = PreviewState(placeholder = it.preview.placeholder, error = readable(error))) }
+                }
+            } finally {
+                if (holdsThumbnail) thumbnailRequests.release(key)
+            }
         }
     }
 
@@ -303,6 +406,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun cancelThumbnailRequests() {
         thumbnailRequests.cancelAll()
+        clearThumbnailBatch()
+    }
+
+    private fun clearThumbnailBatch() {
         thumbnailBatchJob?.cancel()
         thumbnailBatchJob = null
         pendingThumbnails.clear()
@@ -313,7 +420,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         previewJob?.cancel()
         cancelThumbnailRequests()
         val oldSources = sources.values.filterIsInstance<SmbFileSource>()
-        Dispatchers.IO.dispatch(EmptyCoroutineContext) { oldSources.forEach(SmbFileSource::close) }
+        val oldThumbnailSources = thumbnailSources.values.filterIsInstance<SmbFileSource>()
+        Dispatchers.IO.dispatch(EmptyCoroutineContext) {
+            oldSources.forEach(SmbFileSource::close)
+            oldThumbnailSources.forEach(SmbFileSource::close)
+        }
         super.onCleared()
     }
 

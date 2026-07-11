@@ -45,8 +45,18 @@ fun ImagePreview(name: String, state: PreviewState, onBack: () -> Unit) {
     var loadError by remember(state.image) { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         when {
-            state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-            state.error != null -> Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
+            state.loading -> {
+                state.placeholder?.let {
+                    AsyncImage(model = it, contentDescription = name, modifier = Modifier.fillMaxSize().padding(36.dp), contentScale = ContentScale.Fit)
+                }
+                CircularProgressIndicator(Modifier.align(Alignment.Center))
+            }
+            state.error != null -> {
+                state.placeholder?.let {
+                    AsyncImage(model = it, contentDescription = name, modifier = Modifier.fillMaxSize().padding(36.dp), contentScale = ContentScale.Fit)
+                }
+                Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
+            }
             state.image != null -> {
                 if (!loaded && state.placeholder != null) {
                     AsyncImage(model = state.placeholder, contentDescription = name, modifier = Modifier.fillMaxSize().padding(36.dp), contentScale = ContentScale.Fit)

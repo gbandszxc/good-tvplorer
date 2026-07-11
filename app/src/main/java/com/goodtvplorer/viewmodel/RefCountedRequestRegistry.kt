@@ -36,8 +36,17 @@ internal class RefCountedRequestRegistry(private val scope: CoroutineScope) {
     }
 
     fun cancelAll() {
-        requests.values.forEach { it.job.cancel() }
+        val jobs = requests.values.map(Request::job)
         requests.clear()
+        jobs.forEach(Job::cancel)
+    }
+
+    fun cancelAllExcept(key: String) {
+        val kept = requests[key]
+        val jobs = requests.filterKeys { it != key }.values.map(Request::job)
+        requests.clear()
+        if (kept != null) requests[key] = kept
+        jobs.forEach(Job::cancel)
     }
 
     private data class Request(val job: Job, var references: Int = 1)
