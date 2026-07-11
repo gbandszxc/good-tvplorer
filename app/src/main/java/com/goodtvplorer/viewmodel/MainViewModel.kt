@@ -58,6 +58,27 @@ internal class BrowserMemoryCache {
     fun clear() = states.clear()
 }
 
+internal class BrowserLocationMemory {
+    private val paths = mutableMapOf<String, String>()
+    private var lastNetworkSourceKey: String? = null
+
+    fun record(sourceKey: String, path: String) {
+        paths[sourceKey] = path
+        if (sourceKey.startsWith("smb:")) lastNetworkSourceKey = sourceKey
+    }
+
+    fun pathFor(sourceKey: String): String = paths[sourceKey].orEmpty()
+
+    fun lastNetworkScreen(): Screen.Browser? = lastNetworkSourceKey?.let { sourceKey ->
+        Screen.Browser(sourceKey, pathFor(sourceKey))
+    }
+
+    fun retainNetworkSources(sourceKeys: Set<String>) {
+        paths.keys.filter { it.startsWith("smb:") && it !in sourceKeys }.forEach(paths::remove)
+        if (lastNetworkSourceKey !in sourceKeys) lastNetworkSourceKey = null
+    }
+}
+
 data class PreviewState(
     val loading: Boolean = false,
     val file: File? = null,
@@ -166,6 +187,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val thumbnailSources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailRequests = RefCountedRequestRegistry(viewModelScope)
     private val browserCache = BrowserMemoryCache()
+    private val browserLocations = BrowserLocationMemory()
     private val thumbnailSemaphore = Semaphore(3)
     private val pendingThumbnails = mutableMapOf<String, File>()
     private var thumbnailBatchJob: Job? = null
@@ -193,6 +215,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     sources["smb:${info.id}"] = SmbFileSource(info, freshConnectionPerOperation = true)
                     thumbnailSources["smb:${info.id}"] = SmbFileSource(info)
                 }
+                browserLocations.retainNetworkSources(connections.map { "smb:${it.id}" }.toSet())
                 _state.update { it.copy(smbConnections = connections) }
             }
         }
@@ -205,15 +228,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun openNetwork() {
+        browserLocations.lastNetworkScreen()?.let { screen ->
+            return openBrowser(screen.sourceKey, screen.path)
+        }
+        openNetworkHub()
+    }
+
+    private fun openNetworkHub() {
         browserJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()
         _state.update { it.copy(screen = Screen.Network, preview = PreviewState()) }
     }
 
-    fun openLocal() = openBrowser(local.key, "")
+    fun openLocal() = openBrowser(local.key, browserLocations.pathFor(local.key))
 
-    fun openSmb(id: String) = openBrowser("smb:$id", "")
+    fun openSmb(id: String) {
+        val sourceKey = "smb:$id"
+        openBrowser(sourceKey, browserLocations.pathFor(sourceKey))
+    }
 
     fun addSmb(info: SmbConnectionInfo) {
         viewModelScope.launch { store.add(info) }
@@ -242,6 +275,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openBrowser(sourceKey: String, path: String, forceRefresh: Boolean = false) {
         val source = sources[sourceKey] ?: return showError("文件源不存在")
         val screen = Screen.Browser(sourceKey, path)
+        browserLocations.record(sourceKey, path)
         browserJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()
@@ -306,7 +340,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         thumbnailRequests.release(thumbKey(item))
     }
 
-    fun goBack() = navigateBack(_state.value, ::openNetwork, ::openLocal, { sourceKey, path -> openBrowser(sourceKey, path) }) { state ->
+    fun goBack() = navigateBack(_state.value, ::openNetworkHub, ::openLocal, { sourceKey, path -> openBrowser(sourceKey, path) }) { state ->
         restoreImagePreview(
             state = state,
             cancelPreview = {

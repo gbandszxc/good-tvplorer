@@ -16,6 +16,27 @@ import kotlin.test.assertSame
 
 class MainViewModelTest {
     @Test
+    fun `source switches restore each source's most recent directory`() {
+        val locations = BrowserLocationMemory()
+
+        locations.record("local", "Movies/2024")
+        locations.record("smb:nas", "Shows/Season 1")
+
+        assertEquals("Movies/2024", locations.pathFor("local"))
+        assertEquals(Screen.Browser("smb:nas", "Shows/Season 1"), locations.lastNetworkScreen())
+    }
+
+    @Test
+    fun `removed SMB connection no longer has a restorable directory`() {
+        val locations = BrowserLocationMemory()
+        locations.record("smb:nas", "Shows")
+
+        locations.retainNetworkSources(emptySet())
+
+        assertNull(locations.lastNetworkScreen())
+    }
+
+    @Test
     fun entered_path_stays_in_current_source() {
         assertEquals("Movies/2024", resolveBrowserPath("Movies", "2024"))
         assertEquals("Pictures", resolveBrowserPath("Movies/2024", "/Pictures"))
