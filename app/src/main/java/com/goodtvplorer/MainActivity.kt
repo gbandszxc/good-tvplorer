@@ -22,6 +22,7 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import com.goodtvplorer.domain.FileSourceImageFetcher
 import com.goodtvplorer.domain.ImageModelKeyer
+import com.goodtvplorer.data.effectiveFontScale
 import com.goodtvplorer.ui.browser.BrowserScreen
 import com.goodtvplorer.ui.components.DisplaySettingsDialog
 import com.goodtvplorer.ui.home.HomeScreen
@@ -58,7 +59,7 @@ class MainActivity : ComponentActivity() {
                 val state by viewModel.state.collectAsState()
                 var showDisplaySettings by remember { mutableStateOf(false) }
                 val density = LocalDensity.current
-                CompositionLocalProvider(LocalDensity provides Density(density.density, state.fontScale)) {
+                CompositionLocalProvider(LocalDensity provides Density(density.density, effectiveFontScale(state.fontScale))) {
                     BackHandler {
                         if (showDisplaySettings) showDisplaySettings = false else viewModel.goBack()
                     }

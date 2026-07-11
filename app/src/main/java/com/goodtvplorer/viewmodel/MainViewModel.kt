@@ -75,7 +75,7 @@ data class MainUiState(
     val preview: PreviewState = PreviewState(),
     val thumbnails: Map<String, File> = emptyMap(),
     val browserViewMode: BrowserViewMode = BrowserViewMode.Grid,
-    val fontScale: Float = 0.85f,
+    val fontScale: Float = 1f,
 )
 
 internal fun navigateBack(
