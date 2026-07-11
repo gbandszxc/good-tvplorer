@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -79,8 +80,13 @@ fun ImageViewer(
     var loadError by remember(state.image) { mutableStateOf<String?>(null) }
     var controlsVisible by remember { mutableStateOf(false) }
     val viewerFocusRequester = remember { FocusRequester() }
-    val selectedFilmFocusRequester = remember(name) { FocusRequester() }
+    val selectedFilmFocusRequester = remember(selectedPath) { FocusRequester() }
+    val filmstripState = rememberLazyListState()
+    val selectedFilmIndex = images.indexOfFirst { it.handle.path == selectedPath }
     LaunchedEffect(Unit) { viewerFocusRequester.requestFocus() }
+    LaunchedEffect(controlsVisible, selectedFilmIndex) {
+        if (controlsVisible && selectedFilmIndex >= 0) filmstripState.scrollToItem(selectedFilmIndex)
+    }
     BackHandler(enabled = controlsVisible) { controlsVisible = false }
     Box(
         Modifier.fillMaxSize().background(Color.Black).focusRequester(viewerFocusRequester).focusable()
@@ -155,6 +161,7 @@ fun ImageViewer(
                 Spacer(Modifier.weight(1f))
                 LazyRow(
                     modifier = Modifier.fillMaxWidth().height(132.dp).background(Color(0xE6101A26)).padding(horizontal = 28.dp, vertical = 12.dp),
+                    state = filmstripState,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(images, key = { it.handle.sourceKey + it.handle.path }) { item ->
