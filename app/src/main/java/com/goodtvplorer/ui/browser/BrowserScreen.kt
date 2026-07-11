@@ -1,6 +1,7 @@
 package com.goodtvplorer.ui.browser
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,6 +63,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -394,12 +396,11 @@ private fun NavigateUpRow(initiallyFocused: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun NavigateUpTile(initiallyFocused: Boolean, onClick: () -> Unit) {
-    FocusSurface(Modifier.fillMaxWidth().aspectRatio(16f / 10f), initiallyFocused, onFocus = {}, onClick = onClick) { focused ->
-        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(if (focused) Color(0xFFE7B94F) else Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
+    FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus = {}, onClick = onClick) { focused ->
+        GridTileContent(focused, "返回上一级") { modifier ->
+            Box(modifier.clip(RoundedCornerShape(8.dp)).background(if (focused) Color(0xFFE7B94F) else Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
                 Icon(painterResource(R.drawable.ic_back), contentDescription = null, tint = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), modifier = Modifier.size(34.dp))
             }
-            Text("返回上一级", color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 }
@@ -419,9 +420,26 @@ private fun InlineMessage(title: String, body: String) {
 @Composable
 private fun FileTile(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, initiallyFocused: Boolean, onFocus: () -> Unit, onClick: () -> Unit) {
     FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus, onClick) { focused ->
-        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 10f), onThumbnailVisible, onThumbnailHidden)
-            Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        GridTileContent(focused, item.name) { modifier ->
+            MediaThumb(item, thumbnail, modifier, onThumbnailVisible, onThumbnailHidden)
+        }
+    }
+}
+
+@Composable
+private fun GridTileContent(focused: Boolean, title: String, media: @Composable (Modifier) -> Unit) {
+    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        media(Modifier.fillMaxWidth().aspectRatio(16f / 10f))
+        Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.CenterStart) {
+            Text(
+                title,
+                modifier = Modifier.fillMaxWidth().then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
+                color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
+            )
         }
     }
 }
