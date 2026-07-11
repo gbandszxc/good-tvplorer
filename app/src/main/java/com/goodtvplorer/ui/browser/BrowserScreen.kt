@@ -86,6 +86,8 @@ fun BrowserScreen(
     viewMode: BrowserViewMode,
     sort: BrowserSort,
     searchQuery: String,
+    searchItems: List<FileItem>?,
+    searchLoading: Boolean,
     focusAnchorPath: String?,
     onOpen: (FileItem) -> Unit,
     onOpenPath: (String) -> Unit,
@@ -94,8 +96,10 @@ fun BrowserScreen(
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
-    val visibleItems = remember(state.items, searchQuery, sort) {
-        filterAndSortBrowserItems(state.items, searchQuery, sort)
+    var searchHasFocus by remember { mutableStateOf(false) }
+    val searchableItems = searchItems ?: state.items
+    val visibleItems = remember(searchableItems, searchQuery, sort) {
+        filterAndSortBrowserItems(searchableItems, searchQuery, sort)
     }
     val defaultFocusedPath = remember(visibleItems, focusAnchorPath) {
         visibleItems.firstOrNull { it.handle.path == focusAnchorPath }?.handle?.path
@@ -107,7 +111,7 @@ fun BrowserScreen(
     val preview = focusedItem ?: visibleItems.firstOrNull()
 
     Column(Modifier.fillMaxSize()) {
-        BrowserToolbar(path, sort, searchQuery, onOpenPath, onSortChange, onSearchQueryChange)
+        BrowserToolbar(path, sort, searchQuery, onOpenPath, onSortChange, onSearchQueryChange, onSearchFocusChange = { searchHasFocus = it })
         Row(
             Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -117,15 +121,16 @@ fun BrowserScreen(
                     state.loading -> LoadingPanel()
                     state.error != null -> MessagePanel("连接或读取失败", state.error, Color(0xFFFFA3A3))
                     state.items.isEmpty() -> MessagePanel("目录为空", "Back 返回上级，或刷新当前目录。", Color(0xFFC8D5E2))
+                    visibleItems.isEmpty() && searchLoading -> MessagePanel("正在递归搜索", "正在检索当前目录及其子目录。", Color(0xFFC8D5E2))
                     visibleItems.isEmpty() -> MessagePanel("未找到匹配项目", "尝试修改搜索词。", Color(0xFFC8D5E2))
                     viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                     else -> LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = !searchHasFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                 }
@@ -143,6 +148,7 @@ private fun BrowserToolbar(
     onOpenPath: (String) -> Unit,
     onSortChange: (BrowserSort) -> Unit,
     onSearchQueryChange: (String) -> Unit,
+    onSearchFocusChange: (Boolean) -> Unit,
 ) {
     var editing by remember(path) { mutableStateOf(false) }
     var enteredPath by remember(path) { mutableStateOf(path) }
@@ -196,7 +202,7 @@ private fun BrowserToolbar(
                 Text(displayPath, modifier = Modifier.weight(1f), color = Color(0xFF9FB0C2), fontSize = 20.sp, maxLines = 1)
             }
         }
-        SearchField(searchQuery, onSearchQueryChange)
+        SearchField(searchQuery, onSearchQueryChange, onSearchFocusChange)
     }
 }
 
@@ -209,7 +215,14 @@ private fun SortMenuButton(sort: BrowserSort, onSortChange: (BrowserSort) -> Uni
             sortOptions.forEach { option ->
                 val selected = option == sort
                 DropdownMenuItem(
-                    text = { Text(option.label(), color = if (selected) Color(0xFFFFC857) else Color(0xFFF3F7FA), fontSize = 18.sp) },
+                    text = {
+                        Row(Modifier.width(196.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(painterResource(option.iconRes()), contentDescription = null, tint = if (selected) Color(0xFFFFC857) else Color(0xFFA8B8C7), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(option.fieldLabel(), modifier = Modifier.weight(1f), color = if (selected) Color(0xFFFFC857) else Color(0xFFF3F7FA), fontSize = 18.sp)
+                            Text(option.directionArrow(), color = if (selected) Color(0xFFFFC857) else Color(0xFFA8B8C7), fontSize = 22.sp)
+                        }
+                    },
                     onClick = { onSortChange(option); expanded = false },
                     modifier = Modifier.semantics { contentDescription = option.label() },
                 )
@@ -219,7 +232,7 @@ private fun SortMenuButton(sort: BrowserSort, onSortChange: (BrowserSort) -> Uni
 }
 
 @Composable
-private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
+private fun SearchField(query: String, onQueryChange: (String) -> Unit, onFocusChange: (Boolean) -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val border = if (focused) Color(0xFFFFE3A1) else Color.Transparent
     Row(
@@ -232,7 +245,10 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
         BasicTextField(
             value = query,
             onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f).onFocusChanged { focused = it.isFocused }.semantics { contentDescription = "搜索当前目录" },
+            modifier = Modifier.weight(1f).onFocusChanged {
+                focused = it.isFocused
+                onFocusChange(it.isFocused)
+            }.semantics { contentDescription = "搜索当前目录" },
             singleLine = true,
             textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 18.sp),
             cursorBrush = SolidColor(Color(0xFFC8D5E2)),
@@ -267,12 +283,24 @@ private val sortOptions = BrowserSortField.entries.flatMap { field ->
 }
 
 private fun BrowserSort.label(): String {
+    return "${fieldLabel()} ${if (direction == SortDirection.Ascending) "正序" else "倒序"}"
+}
+
+private fun BrowserSort.fieldLabel(): String {
     val fieldLabel = when (field) {
         BrowserSortField.Name -> "文件名"
         BrowserSortField.Size -> "文件大小"
         BrowserSortField.ModifiedTime -> "最后修改时间"
     }
-    return "$fieldLabel${if (direction == SortDirection.Ascending) " 正序" else " 倒序"}"
+    return fieldLabel
+}
+
+private fun BrowserSort.directionArrow(): String = if (direction == SortDirection.Ascending) "↑" else "↓"
+
+private fun BrowserSort.iconRes(): Int = when (field) {
+    BrowserSortField.Name -> R.drawable.ic_sort_name
+    BrowserSortField.Size -> R.drawable.ic_sort_size
+    BrowserSortField.ModifiedTime -> R.drawable.ic_sort_time
 }
 
 @Composable

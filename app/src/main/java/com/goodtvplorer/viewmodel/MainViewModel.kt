@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,6 +90,8 @@ data class MainUiState(
     val browserViewMode: BrowserViewMode = BrowserViewMode.Grid,
     val browserSort: BrowserSort = BrowserSort(),
     val browserSearchQuery: String = "",
+    val browserSearchItems: List<FileItem>? = null,
+    val browserSearchLoading: Boolean = false,
     val fontScale: Float = 1f,
 )
 
@@ -121,6 +124,36 @@ internal fun filterAndSortBrowserItems(
 
 private fun compareFileNames(left: FileItem, right: FileItem): Int =
     left.name.lowercase(Locale.ROOT).compareTo(right.name.lowercase(Locale.ROOT))
+
+internal suspend fun searchDirectoryTree(
+    source: FileSource,
+    rootPath: String,
+    rootItems: List<FileItem>,
+    query: String,
+): List<FileItem> {
+    val matches = mutableListOf<FileItem>()
+    val visitedDirectories = mutableSetOf(rootPath)
+
+    suspend fun visit(items: List<FileItem>) {
+        items.forEach { item ->
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (item.name.contains(query, ignoreCase = true)) matches += item
+            if (item.kind == FileKind.Directory && visitedDirectories.add(item.handle.path)) {
+                val children = try {
+                    source.list(item.handle.path)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                visit(children)
+            }
+        }
+    }
+
+    visit(rootItems)
+    return matches
+}
 
 internal fun navigateBack(
     state: MainUiState,
@@ -215,6 +248,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val pendingThumbnails = mutableMapOf<String, File>()
     private var thumbnailBatchJob: Job? = null
     private var browserJob: Job? = null
+    private var searchJob: Job? = null
     private var previewJob: Job? = null
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
@@ -297,7 +331,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setBrowserSearchQuery(query: String) {
-        _state.update { it.copy(browserSearchQuery = query) }
+        searchJob?.cancel()
+        val screen = _state.value.screen as? Screen.Browser ?: return
+        if (query.isBlank()) {
+            _state.update { it.copy(browserSearchQuery = "", browserSearchItems = null, browserSearchLoading = false) }
+            return
+        }
+        val source = sources[screen.sourceKey] ?: return
+        startBrowserSearch(screen, source, _state.value.browser.items, query)
+    }
+
+    private fun startBrowserSearch(
+        screen: Screen.Browser,
+        source: FileSource,
+        rootItems: List<FileItem>,
+        query: String,
+    ) {
+        searchJob?.cancel()
+        _state.update { it.copy(browserSearchQuery = query, browserSearchItems = rootItems, browserSearchLoading = true) }
+        searchJob = viewModelScope.launch {
+            delay(200)
+            val results = searchDirectoryTree(source, screen.path, rootItems, query)
+            if (_state.value.screen == screen && _state.value.browserSearchQuery == query) {
+                _state.update { it.copy(browserSearchItems = results, browserSearchLoading = false) }
+            }
+        }
     }
 
     fun setFontScale(value: Float) {
@@ -316,6 +374,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val focusAnchorPath = navigation.focusAnchorFor(sourceKey, path)
         navigation.recordLocation(sourceKey, path, System.currentTimeMillis())
         browserJob?.cancel()
+        searchJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()
         if (forceRefresh) browserCache.remove(screen)
@@ -326,6 +385,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     browser = cached,
                     focusAnchorPath = focusAnchorPath,
                     browserSearchQuery = if (clearSearch) "" else it.browserSearchQuery,
+                    browserSearchItems = if (clearSearch) null else it.browserSearchItems,
+                    browserSearchLoading = if (clearSearch) false else it.browserSearchLoading,
                 )
             }
             return
@@ -336,6 +397,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 browser = BrowserState(loading = true),
                 focusAnchorPath = focusAnchorPath,
                 browserSearchQuery = if (clearSearch) "" else it.browserSearchQuery,
+                browserSearchItems = if (clearSearch) null else it.browserSearchItems,
+                browserSearchLoading = if (clearSearch) false else it.browserSearchLoading,
             )
         }
         browserJob = viewModelScope.launch {
@@ -351,6 +414,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             focusAnchorPath = focusAnchorPath,
                             thumbnails = it.thumbnails.filterKeys(thumbnailKeys::contains),
                         )
+                    }
+                    _state.value.browserSearchQuery.takeIf(String::isNotBlank)?.let { query ->
+                        startBrowserSearch(screen, source, items, query)
                     }
                 }
             } catch (error: CancellationException) {

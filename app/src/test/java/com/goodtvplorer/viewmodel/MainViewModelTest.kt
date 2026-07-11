@@ -59,6 +59,20 @@ class MainViewModelTest {
         assertEquals(listOf(old, new), filterAndSortBrowserItems(listOf(new, old), "", BrowserSort(BrowserSortField.ModifiedTime, SortDirection.Ascending)))
         assertEquals(listOf(new, old), filterAndSortBrowserItems(listOf(old, new), "", BrowserSort(BrowserSortField.ModifiedTime, SortDirection.Descending)))
     }
+
+    @Test
+    fun `recursive search returns matching items below the current directory`() = runBlocking {
+        val root = fileItem("Root", FileKind.Directory, size = null, modifiedAtMillis = null)
+        val nested = fileItem("Movies", FileKind.Directory, size = null, modifiedAtMillis = null).copy(
+            handle = FileHandle("local", SourceKind.Local, "Movies"),
+        )
+        val result = fileItem("My Movie.mkv", FileKind.Video, size = 1L, modifiedAtMillis = 1L).copy(
+            handle = FileHandle("local", SourceKind.Local, "Movies/My Movie.mkv"),
+        )
+        val source = DirectorySource(mapOf("" to listOf(root, nested), "Movies" to listOf(result)))
+
+        assertEquals(listOf(nested, result), searchDirectoryTree(source, "", listOf(root, nested), "movie"))
+    }
     @Test
     fun entered_path_stays_in_current_source() {
         assertEquals("Movies/2024", resolveBrowserPath("Movies", "2024"))
@@ -209,6 +223,16 @@ class MainViewModelTest {
         override val kind = SourceKind.Smb
         override val title = "NAS"
         override suspend fun list(path: String) = emptyList<FileItem>()
+        override suspend fun readRange(path: String, offset: Long, maxBytes: Int) = ByteArray(0)
+        override suspend fun openStream(path: String): InputStream = ByteArrayInputStream(ByteArray(0))
+        override suspend fun copyTo(path: String, target: File) = Unit
+    }
+
+    private class DirectorySource(private val directories: Map<String, List<FileItem>>) : FileSource {
+        override val key = "local"
+        override val kind = SourceKind.Local
+        override val title = "本机"
+        override suspend fun list(path: String): List<FileItem> = directories[path].orEmpty()
         override suspend fun readRange(path: String, offset: Long, maxBytes: Int) = ByteArray(0)
         override suspend fun openStream(path: String): InputStream = ByteArrayInputStream(ByteArray(0))
         override suspend fun copyTo(path: String, target: File) = Unit

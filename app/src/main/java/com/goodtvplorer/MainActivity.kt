@@ -80,6 +80,8 @@ class MainActivity : ComponentActivity() {
                                     viewMode = state.browserViewMode,
                                     sort = state.browserSort,
                                     searchQuery = state.browserSearchQuery,
+                                    searchItems = state.browserSearchItems,
+                                    searchLoading = state.browserSearchLoading,
                                     focusAnchorPath = state.focusAnchorPath,
                                     onOpen = viewModel::openItem,
                                     onOpenPath = viewModel::openEnteredPath,
