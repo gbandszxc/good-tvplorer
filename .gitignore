@@ -42,3 +42,4 @@ Thumbs.db
 thumb_cache/
 .codegraph/
 .superpowers/
+tmp/

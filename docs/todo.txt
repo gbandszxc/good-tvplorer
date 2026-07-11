@@ -1,0 +1,1 @@
+1.debug release是否互斥，期望是debug包和release包能安装到同一台设备
