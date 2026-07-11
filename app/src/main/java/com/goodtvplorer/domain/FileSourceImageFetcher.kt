@@ -8,7 +8,6 @@ import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.key.Keyer
 import coil3.request.Options
-import com.goodtvplorer.data.SourceKind
 import okio.buffer
 import okio.source
 
@@ -21,15 +20,15 @@ class FileSourceImageFetcher(
     private val options: Options,
 ) : Fetcher {
     override suspend fun fetch(): FetchResult {
-        val stream = data.source.openStream(data.item.handle.path)
+        val opened = data.open()
         return try {
             SourceFetchResult(
-                source = ImageSource(stream.source().buffer(), options.fileSystem),
+                source = ImageSource(opened.stream.source().buffer(), options.fileSystem),
                 mimeType = data.item.name.imageMimeType(),
-                dataSource = if (data.item.handle.sourceKind == SourceKind.Smb) DataSource.NETWORK else DataSource.DISK,
+                dataSource = opened.dataSource,
             )
         } catch (error: Throwable) {
-            stream.close()
+            opened.stream.close()
             throw error
         }
     }
