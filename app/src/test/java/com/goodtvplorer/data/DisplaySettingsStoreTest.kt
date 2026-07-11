@@ -3,7 +3,7 @@ package com.goodtvplorer.data
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-class DisplaySettingsStoreTest {
+class DisplaySettingsTest {
     @Test
     fun new_100_percent_keeps_old_75_percent_size() =
         assertEquals(0.75f, effectiveFontScale(1f), 0.0001f)
