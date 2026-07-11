@@ -37,6 +37,31 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `directory anchors restore the last entered child for each parent directory`() {
+        val anchors = BrowserFocusAnchorMemory()
+        val movieDirectory = FileItem(
+            name = "Movies",
+            handle = FileHandle("local", SourceKind.Local, "Movies"),
+            kind = FileKind.Directory,
+            size = null,
+            modifiedAtMillis = null,
+        )
+        val seasonDirectory = FileItem(
+            name = "Season 1",
+            handle = FileHandle("smb:nas", SourceKind.Smb, "Shows/Season 1"),
+            kind = FileKind.Directory,
+            size = null,
+            modifiedAtMillis = null,
+        )
+
+        anchors.record(movieDirectory)
+        anchors.record(seasonDirectory)
+
+        assertEquals("Movies", anchors.pathFor("local", ""))
+        assertEquals("Shows/Season 1", anchors.pathFor("smb:nas", "Shows"))
+    }
+
+    @Test
     fun entered_path_stays_in_current_source() {
         assertEquals("Movies/2024", resolveBrowserPath("Movies", "2024"))
         assertEquals("Pictures", resolveBrowserPath("Movies/2024", "/Pictures"))

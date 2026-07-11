@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
                                     state = state.browser,
                                     thumbnails = state.thumbnails,
                                     viewMode = state.browserViewMode,
+                                    focusAnchorPath = state.focusAnchorPath,
                                     onOpen = viewModel::openItem,
                                     onOpenPath = viewModel::openEnteredPath,
                                     onThumbnailVisible = viewModel::requestThumbnail,

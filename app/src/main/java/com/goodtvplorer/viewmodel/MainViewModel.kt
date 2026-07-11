@@ -79,6 +79,22 @@ internal class BrowserLocationMemory {
     }
 }
 
+internal class BrowserFocusAnchorMemory {
+    private val anchors = mutableMapOf<Pair<String, String>, String>()
+
+    fun record(item: FileItem) {
+        val parentPath = item.handle.path.substringBeforeLast('/', "")
+        anchors[item.handle.sourceKey to parentPath] = item.handle.path
+    }
+
+    fun pathFor(sourceKey: String, parentPath: String): String? = anchors[sourceKey to parentPath]
+
+    fun retainNetworkSources(sourceKeys: Set<String>) {
+        anchors.keys.filter { (sourceKey, _) -> sourceKey.startsWith("smb:") && sourceKey !in sourceKeys }
+            .forEach(anchors::remove)
+    }
+}
+
 data class PreviewState(
     val loading: Boolean = false,
     val file: File? = null,
@@ -93,6 +109,7 @@ data class MainUiState(
     val screen: Screen = Screen.Browser("local", ""),
     val smbConnections: List<SmbConnectionInfo> = emptyList(),
     val browser: BrowserState = BrowserState(),
+    val focusAnchorPath: String? = null,
     val preview: PreviewState = PreviewState(),
     val thumbnails: Map<String, File> = emptyMap(),
     val browserViewMode: BrowserViewMode = BrowserViewMode.Grid,
@@ -188,6 +205,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val thumbnailRequests = RefCountedRequestRegistry(viewModelScope)
     private val browserCache = BrowserMemoryCache()
     private val browserLocations = BrowserLocationMemory()
+    private val browserFocusAnchors = BrowserFocusAnchorMemory()
     private val thumbnailSemaphore = Semaphore(3)
     private val pendingThumbnails = mutableMapOf<String, File>()
     private var thumbnailBatchJob: Job? = null
@@ -216,6 +234,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     thumbnailSources["smb:${info.id}"] = SmbFileSource(info)
                 }
                 browserLocations.retainNetworkSources(connections.map { "smb:${it.id}" }.toSet())
+                browserFocusAnchors.retainNetworkSources(connections.map { "smb:${it.id}" }.toSet())
                 _state.update { it.copy(smbConnections = connections) }
             }
         }
@@ -275,16 +294,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun openBrowser(sourceKey: String, path: String, forceRefresh: Boolean = false) {
         val source = sources[sourceKey] ?: return showError("文件源不存在")
         val screen = Screen.Browser(sourceKey, path)
+        val focusAnchorPath = browserFocusAnchors.pathFor(sourceKey, path)
         browserLocations.record(sourceKey, path)
         browserJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()
         if (forceRefresh) browserCache.remove(screen)
         browserCache[screen]?.let { cached ->
-            _state.update { it.copy(screen = screen, browser = cached) }
+            _state.update { it.copy(screen = screen, browser = cached, focusAnchorPath = focusAnchorPath) }
             return
         }
-        _state.update { it.copy(screen = screen, browser = BrowserState(loading = true)) }
+        _state.update { it.copy(screen = screen, browser = BrowserState(loading = true), focusAnchorPath = focusAnchorPath) }
         browserJob = viewModelScope.launch {
             try {
                 val items = source.list(path)
@@ -295,6 +315,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update {
                         it.copy(
                             browser = browser,
+                            focusAnchorPath = focusAnchorPath,
                             thumbnails = it.thumbnails.filterKeys(thumbnailKeys::contains),
                         )
                     }
@@ -311,7 +332,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openItem(item: FileItem) {
         when (item.kind) {
-            FileKind.Directory -> openBrowser(item.handle.sourceKey, item.handle.path)
+            FileKind.Directory -> {
+                browserFocusAnchors.record(item)
+                openBrowser(item.handle.sourceKey, item.handle.path)
+            }
             FileKind.Image -> prepareImage(item)
             FileKind.Text -> prepareText(item.handle, item.name)
             FileKind.Audio -> prepareAudio(item.handle, item.name)

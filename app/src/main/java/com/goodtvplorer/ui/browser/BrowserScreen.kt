@@ -78,12 +78,19 @@ fun BrowserScreen(
     state: BrowserState,
     thumbnails: Map<String, File>,
     viewMode: BrowserViewMode,
+    focusAnchorPath: String?,
     onOpen: (FileItem) -> Unit,
     onOpenPath: (String) -> Unit,
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
-    var focusedItem by remember(state.items) { mutableStateOf<FileItem?>(state.items.firstOrNull()) }
+    val defaultFocusedPath = remember(state.items, focusAnchorPath) {
+        state.items.firstOrNull { it.handle.path == focusAnchorPath }?.handle?.path
+            ?: state.items.firstOrNull()?.handle?.path
+    }
+    var focusedItem by remember(state.items, defaultFocusedPath) {
+        mutableStateOf(state.items.firstOrNull { it.handle.path == defaultFocusedPath })
+    }
     val preview = focusedItem ?: state.items.firstOrNull()
 
     Column(Modifier.fillMaxSize()) {
@@ -99,12 +106,12 @@ fun BrowserScreen(
                     state.items.isEmpty() -> MessagePanel("目录为空", "Back 返回上级，或刷新当前目录。", Color(0xFFC8D5E2))
                     viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(state.items, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                     else -> LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(state.items, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                            FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
                         }
                     }
                 }
@@ -181,8 +188,8 @@ private fun PathEditButton(onClick: () -> Unit) {
 }
 
 @Composable
-private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, onFocus: () -> Unit, onClick: () -> Unit) {
-    FocusSurface(Modifier.fillMaxWidth(), onFocus, onClick) { focused ->
+private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, initiallyFocused: Boolean, onFocus: () -> Unit, onClick: () -> Unit) {
+    FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus, onClick) { focused ->
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             MediaThumb(item, thumbnail, Modifier.size(48.dp), onThumbnailVisible, onThumbnailHidden)
             Column(Modifier.weight(1f)) {
@@ -195,8 +202,8 @@ private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileI
 }
 
 @Composable
-private fun FileTile(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, onFocus: () -> Unit, onClick: () -> Unit) {
-    FocusSurface(Modifier.fillMaxWidth(), onFocus, onClick) { focused ->
+private fun FileTile(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, initiallyFocused: Boolean, onFocus: () -> Unit, onClick: () -> Unit) {
+    FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus, onClick) { focused ->
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 10f), onThumbnailVisible, onThumbnailHidden)
             Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -205,10 +212,14 @@ private fun FileTile(item: FileItem, thumbnail: File?, onThumbnailVisible: (File
 }
 
 @Composable
-private fun FocusSurface(modifier: Modifier, onFocus: () -> Unit, onClick: () -> Unit, content: @Composable (Boolean) -> Unit) {
+private fun FocusSurface(modifier: Modifier, initiallyFocused: Boolean, onFocus: () -> Unit, onClick: () -> Unit, content: @Composable (Boolean) -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
     val bg by animateColorAsState(if (focused) Color(0xFFFFC857) else Color(0xFF152232), label = "focus-bg")
     val border = if (focused) Color(0xFFFFE3A1) else Color(0xFF24364A)
+    LaunchedEffect(initiallyFocused) {
+        if (initiallyFocused) focusRequester.requestFocus()
+    }
     Box(
         modifier.clip(RoundedCornerShape(10.dp))
             .background(bg)
@@ -217,6 +228,7 @@ private fun FocusSurface(modifier: Modifier, onFocus: () -> Unit, onClick: () ->
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
             }
+            .focusRequester(focusRequester)
             .focusable()
             .tvOkClick(onClick),
     ) {
