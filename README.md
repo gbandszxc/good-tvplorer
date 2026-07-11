@@ -111,7 +111,7 @@ adb shell pm clear com.github.gbandszxc.goodtvplorer           # 清空应用数
 adb uninstall com.github.gbandszxc.goodtvplorer                # 卸载
 ```
 
-Release 构建默认启用 R8 代码压缩、混淆与资源压缩，并按 `armeabi-v7a`、`arm64-v8a` 输出独立 APK。发布后请保留 `app/build/outputs/mapping/release/mapping.txt`，用于还原线上崩溃堆栈。
+Release 构建默认启用 R8 代码压缩、混淆与资源压缩，并按 `armeabi-v7a`、`arm64-v8a` 输出独立 APK。发布后请保留 `app/build/outputs/mapping/release/mapping.txt`，用于还原线上崩溃堆栈。Debug 使用 `.debug` applicationId 后缀，可与 Release 同时安装。
 
 > 提示：Windows 终端使用 PowerShell 时，反斜杠可省略为 `.\gradlew.bat`；若使用 Git Bash，可改用 `./gradlew`。
 
