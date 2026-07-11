@@ -16,52 +16,6 @@ import kotlin.test.assertSame
 
 class MainViewModelTest {
     @Test
-    fun `source switches restore each source's most recent directory`() {
-        val locations = BrowserLocationMemory()
-
-        locations.record("local", "Movies/2024")
-        locations.record("smb:nas", "Shows/Season 1")
-
-        assertEquals("Movies/2024", locations.pathFor("local"))
-        assertEquals(Screen.Browser("smb:nas", "Shows/Season 1"), locations.lastNetworkScreen())
-    }
-
-    @Test
-    fun `removed SMB connection no longer has a restorable directory`() {
-        val locations = BrowserLocationMemory()
-        locations.record("smb:nas", "Shows")
-
-        locations.retainNetworkSources(emptySet())
-
-        assertNull(locations.lastNetworkScreen())
-    }
-
-    @Test
-    fun `directory anchors restore the last entered child for each parent directory`() {
-        val anchors = BrowserFocusAnchorMemory()
-        val movieDirectory = FileItem(
-            name = "Movies",
-            handle = FileHandle("local", SourceKind.Local, "Movies"),
-            kind = FileKind.Directory,
-            size = null,
-            modifiedAtMillis = null,
-        )
-        val seasonDirectory = FileItem(
-            name = "Season 1",
-            handle = FileHandle("smb:nas", SourceKind.Smb, "Shows/Season 1"),
-            kind = FileKind.Directory,
-            size = null,
-            modifiedAtMillis = null,
-        )
-
-        anchors.record(movieDirectory)
-        anchors.record(seasonDirectory)
-
-        assertEquals("Movies", anchors.pathFor("local", ""))
-        assertEquals("Shows/Season 1", anchors.pathFor("smb:nas", "Shows"))
-    }
-
-    @Test
     fun entered_path_stays_in_current_source() {
         assertEquals("Movies/2024", resolveBrowserPath("Movies", "2024"))
         assertEquals("Pictures", resolveBrowserPath("Movies/2024", "/Pictures"))

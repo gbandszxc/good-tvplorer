@@ -27,16 +27,16 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
-import com.goodtvplorer.data.DisplaySettingsStore
 import com.goodtvplorer.data.effectiveFontScale
 import com.goodtvplorer.data.fontScalePercent
 import com.goodtvplorer.data.nextFontScale
+import com.goodtvplorer.data.persistence.DisplaySettingsRepository
 import com.goodtvplorer.ui.components.TvButton
 import com.goodtvplorer.ui.theme.TvTheme
 import kotlinx.coroutines.launch
 
 class SettingsActivity : ComponentActivity() {
-    private val displaySettings by lazy { DisplaySettingsStore(applicationContext) }
+    private val displaySettings by lazy { DisplaySettingsRepository(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

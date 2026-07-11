@@ -34,30 +34,30 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.goodtvplorer.data.SmbConnectionInfo
-import com.goodtvplorer.data.SmbConnectionStore
-import com.goodtvplorer.data.DisplaySettingsStore
 import com.goodtvplorer.data.effectiveFontScale
+import com.goodtvplorer.data.persistence.DisplaySettingsRepository
+import com.goodtvplorer.data.persistence.SmbConnectionRepository
 import com.goodtvplorer.ui.components.TvButton
 import com.goodtvplorer.ui.theme.TvTheme
 import java.util.UUID
 import kotlinx.coroutines.launch
 
 class ConnectionManagementActivity : ComponentActivity() {
-    private val connectionsStore by lazy { SmbConnectionStore(applicationContext) }
-    private val displaySettings by lazy { DisplaySettingsStore(applicationContext) }
+    private val connectionsStore by lazy { SmbConnectionRepository(applicationContext) }
+    private val displaySettings by lazy { DisplaySettingsRepository(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             TvTheme {
-                val connections by connectionsStore.connections.collectAsState(initial = emptyList())
+                val connections by connectionsStore.all.collectAsState(initial = emptyList())
                 val fontScale by displaySettings.fontScale.collectAsState(initial = 1f)
                 val density = LocalDensity.current
                 androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides Density(density.density, effectiveFontScale(fontScale))) {
                     BackHandler { finish() }
                     ConnectionManagementScreen(
                         connections = connections,
-                        onSave = { info -> lifecycleScope.launch { connectionsStore.add(info) } },
+                        onSave = { info -> lifecycleScope.launch { connectionsStore.save(info) } },
                         onDelete = { id -> lifecycleScope.launch { connectionsStore.delete(id) } },
                         onClose = ::finish,
                     )

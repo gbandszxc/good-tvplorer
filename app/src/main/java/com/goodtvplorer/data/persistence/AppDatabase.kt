@@ -73,6 +73,15 @@ interface AppPreferenceDao {
 
 @Dao
 interface BrowserNavigationDao {
+    @Query("SELECT * FROM browser_locations WHERE sourceKey = :sourceKey LIMIT 1")
+    suspend fun locationFor(sourceKey: String): BrowserLocationEntity?
+
+    @Query("SELECT * FROM browser_locations WHERE sourceKey LIKE 'smb:%' ORDER BY updatedAtMillis DESC LIMIT 1")
+    suspend fun lastNetworkLocation(): BrowserLocationEntity?
+
+    @Query("SELECT * FROM browser_focus_anchors WHERE sourceKey = :sourceKey AND parentPath = :parentPath LIMIT 1")
+    suspend fun focusAnchorFor(sourceKey: String, parentPath: String): BrowserFocusAnchorEntity?
+
     @Query("SELECT * FROM browser_locations")
     suspend fun locations(): List<BrowserLocationEntity>
 
@@ -162,6 +171,13 @@ class BrowserNavigationRepository(context: Context) {
         locations = navigation.locations(),
         focusAnchors = navigation.focusAnchors(),
     )
+
+    suspend fun locationFor(sourceKey: String): BrowserLocationEntity? = navigation.locationFor(sourceKey)
+
+    suspend fun lastNetworkLocation(): BrowserLocationEntity? = navigation.lastNetworkLocation()
+
+    suspend fun focusAnchorFor(sourceKey: String, parentPath: String): String? =
+        navigation.focusAnchorFor(sourceKey, parentPath)?.childPath
 
     suspend fun recordLocation(sourceKey: String, path: String, updatedAtMillis: Long) {
         navigation.upsertLocation(BrowserLocationEntity(sourceKey, path, updatedAtMillis))
