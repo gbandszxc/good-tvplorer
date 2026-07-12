@@ -1,5 +1,9 @@
 # Good TVplorer
 
+<p align="center">
+  <img src="docs/raw/icon/raw_icon.png" width="200" alt="Good TVplorer">
+</p>
+
 为 Android TV 与电视遥控器设计的文件管理器，同时浏览**本地存储**与 **SMB / NAS** 媒体库。
 
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.3.10-7F52FF?logo=kotlin)
