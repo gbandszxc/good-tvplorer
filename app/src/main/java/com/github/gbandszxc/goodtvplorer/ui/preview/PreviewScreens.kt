@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CircularProgressIndicator
@@ -218,21 +216,55 @@ private fun ImageFilmstripItem(
 
 @Composable
 fun TextPreview(name: String, state: PreviewState, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF101418)).padding(36.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(name, color = Color.White, fontSize = 28.sp)
+    var page by remember(state.text) { mutableStateOf(0) }
+    val pages = remember(state.text) { textPages(state.text) }
+    val pageFocus = remember { FocusRequester() }
+    LaunchedEffect(state.loading) { if (!state.loading) pageFocus.requestFocus() }
+    Column(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(horizontal = 36.dp, vertical = 24.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("自动换行", color = Color(0xFF7CC7D8), fontSize = 18.sp)
             TvButton("返回", onClick = onBack)
         }
         when {
             state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp) }
-            else -> Column(Modifier.padding(top = 20.dp).verticalScroll(rememberScrollState()).focusable()) {
-                if (state.truncated) Text("仅显示前 1MB", color = Color(0xFFD6F35F), fontSize = 20.sp)
-                Text(state.text, color = Color(0xFFE5E7EB), fontSize = 24.sp, lineHeight = 34.sp)
+            else -> Column(
+                Modifier.padding(top = 18.dp).fillMaxSize().focusRequester(pageFocus).focusable()
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when (event.key) {
+                            Key.PageUp, Key.DirectionLeft -> { page = (page - 1).coerceAtLeast(0); true }
+                            Key.PageDown, Key.DirectionRight -> { page = (page + 1).coerceAtMost(pages.lastIndex); true }
+                            else -> false
+                        }
+                    },
+            ) {
+                if (state.truncated) Text("仅显示前 1MB", color = Color(0xFFFFC857), fontSize = 18.sp)
+                Column(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
+                    pages[page].forEach { line ->
+                        Row(Modifier.fillMaxWidth()) {
+                            Text("${line.number}", modifier = Modifier.width(72.dp), color = Color(0xFF728397), fontSize = 20.sp, lineHeight = 30.sp)
+                            Text(line.text.ifEmpty { " " }, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 20.sp, lineHeight = 30.sp)
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    Text("${page + 1} / ${pages.size}", color = Color(0xFFA8B8C7), fontSize = 18.sp, modifier = Modifier.padding(end = 18.dp))
+                    TvButton("上一页", enabled = page > 0, onClick = { page-- })
+                    Spacer(Modifier.width(10.dp))
+                    TvButton("下一页", enabled = page < pages.lastIndex, onClick = { page++ })
+                }
             }
         }
     }
 }
+
+internal data class NumberedLine(val number: Int, val text: String)
+
+internal fun textPages(text: String, linesPerPage: Int = 14): List<List<NumberedLine>> =
+    text.split('\n').mapIndexed { index, line -> NumberedLine(index + 1, line.trimEnd('\r')) }
+        .chunked(linesPerPage).ifEmpty { listOf(listOf(NumberedLine(1, ""))) }
 
 @Composable
 fun AudioPreview(name: String, state: PreviewState, onBack: () -> Unit) {
