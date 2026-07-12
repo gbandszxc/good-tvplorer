@@ -104,6 +104,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.media3:media3-exoplayer:1.9.0")
+    implementation("androidx.media3:media3-ui:1.9.0")
     implementation("androidx.media3:media3-ui-compose:1.9.0")
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")
     implementation("com.hierynomus:smbj:0.14.0")

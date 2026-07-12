@@ -57,11 +57,11 @@ class MainActivity : ComponentActivity() {
                     launcher.launch(permissions)
                 }
                 val state by viewModel.state.collectAsState()
-                val imageViewerVisible = state.screen is Screen.ImageViewer
-                LaunchedEffect(imageViewerVisible) {
-                    WindowCompat.setDecorFitsSystemWindows(window, !imageViewerVisible)
+                val immersivePreviewVisible = state.screen is Screen.ImageViewer || state.screen is Screen.VideoPreview
+                LaunchedEffect(immersivePreviewVisible) {
+                    WindowCompat.setDecorFitsSystemWindows(window, !immersivePreviewVisible)
                     WindowCompat.getInsetsController(window, window.decorView).apply {
-                        if (imageViewerVisible) {
+                        if (immersivePreviewVisible) {
                             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                             hide(WindowInsetsCompat.Type.systemBars())
                         } else {

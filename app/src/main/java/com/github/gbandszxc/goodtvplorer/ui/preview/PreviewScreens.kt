@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,9 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -47,15 +52,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.text.CueGroup
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.compose.PlayerSurface
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
@@ -332,18 +340,6 @@ private fun AudioPlayer(media: StreamingMedia, lyrics: List<TimedTextCue>, modif
 }
 
 @Composable
-private fun MediaControls(player: ExoPlayer, playing: Boolean, position: Long, duration: Long, modifier: Modifier = Modifier, speed: Float? = null, onSpeed: (() -> Unit)? = null) {
-    Row(modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        TvButton(if (playing) "暂停" else "播放", onClick = { if (player.isPlaying) player.pause() else player.play() })
-        TvButton("−10秒", onClick = { player.seekTo((position - 10_000).coerceAtLeast(0)) })
-        SeekProgress(position, duration, { player.seekTo(it) }, Modifier.weight(1f))
-        TvButton("+10秒", onClick = { player.seekTo((position + 10_000).coerceAtMost(duration)) })
-        if (speed != null && onSpeed != null) TvButton("${speed}×", onClick = onSpeed)
-        Text("${format(position)} / ${format(duration)}", color = Color(0xFFA8B8C7), fontSize = 18.sp)
-    }
-}
-
-@Composable
 private fun SeekProgress(position: Long, duration: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
     Box(
@@ -364,23 +360,36 @@ private fun SeekProgress(position: Long, duration: Long, onSeek: (Long) -> Unit,
 }
 
 @Composable
-fun VideoPreview(name: String, state: PreviewState, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF05080D)).padding(horizontal = 28.dp, vertical = 20.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            TvButton("返回", onClick = onBack)
-        }
-        when {
-            state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFFA3A3), fontSize = 26.sp) }
-            state.media != null -> VideoPlayer(state.media, state.timedText, Modifier.weight(1f))
-        }
-    }
+fun VideoPreview(name: String, state: PreviewState, onBack: () -> Unit) = when {
+    state.loading -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    state.error != null -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFFA3A3), fontSize = 26.sp) }
+    state.media != null -> VideoPlayer(name, state.media, state.timedText, onBack)
+    else -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { Text("没有可用的视频", color = Color(0xFFA8B8C7), fontSize = 26.sp) }
 }
 
+internal enum class VideoScaleMode(
+    val label: String,
+    val resizeMode: Int,
+    val targetRatio: Float? = null,
+) {
+    Fit("适应屏幕", AspectRatioFrameLayout.RESIZE_MODE_FIT),
+    Fill("铺满屏幕", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
+    Stretch("拉伸全屏", AspectRatioFrameLayout.RESIZE_MODE_FILL),
+    Original("原始比例", AspectRatioFrameLayout.RESIZE_MODE_FIT),
+    Ratio16x9("16:9", AspectRatioFrameLayout.RESIZE_MODE_ZOOM, 16f / 9f),
+    Ratio4x3("4:3", AspectRatioFrameLayout.RESIZE_MODE_ZOOM, 4f / 3f),
+    ;
+
+    fun next(): VideoScaleMode = entries[(ordinal + 1) % entries.size]
+}
+
+internal fun effectiveVideoScaleMode(mode: VideoScaleMode, size: VideoSize): VideoScaleMode =
+    if (mode == VideoScaleMode.Original && (size.width <= 0 || size.height <= 0)) VideoScaleMode.Fit else mode
+
 @Composable
-private fun VideoPlayer(media: StreamingMedia, subtitles: List<TimedTextCue>, modifier: Modifier = Modifier) {
+private fun VideoPlayer(name: String, media: StreamingMedia, subtitles: List<TimedTextCue>, onBack: () -> Unit) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val player = remember(media) {
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(FileSourceDataSource.Factory(media)))
@@ -392,18 +401,26 @@ private fun VideoPlayer(media: StreamingMedia, subtitles: List<TimedTextCue>, mo
     var speed by remember { mutableStateOf(1f) }
     var error by remember { mutableStateOf<String?>(null) }
     var embeddedSubtitle by remember { mutableStateOf("") }
+    var videoSize by remember { mutableStateOf(VideoSize.UNKNOWN) }
+    var controlsVisible by remember { mutableStateOf(false) }
+    var scaleMode by remember { mutableStateOf(VideoScaleMode.Fit) }
+    val playerFocus = remember { FocusRequester() }
     val controlFocus = remember { FocusRequester() }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onCues(cueGroup: CueGroup) {
                 embeddedSubtitle = cueGroup.cues.mapNotNull { it.text?.toString() }.joinToString("\n")
             }
+
+            override fun onVideoSizeChanged(newVideoSize: VideoSize) {
+                videoSize = newVideoSize
+            }
         }
         player.addListener(listener)
         onDispose { player.removeListener(listener); player.release() }
     }
-    LaunchedEffect(player) {
-        controlFocus.requestFocus()
+    LaunchedEffect(player, controlsVisible) {
+        if (controlsVisible) controlFocus.requestFocus() else playerFocus.requestFocus()
         while (true) {
             position = player.currentPosition.coerceAtLeast(0)
             duration = player.duration.takeIf { it > 0 } ?: 0L
@@ -413,35 +430,104 @@ private fun VideoPlayer(media: StreamingMedia, subtitles: List<TimedTextCue>, mo
         }
     }
     val subtitle = subtitles.lastOrNull { position >= it.startMs }?.takeIf { position < it.endMs }?.text ?: embeddedSubtitle.takeIf(String::isNotBlank)
-    Column(modifier.fillMaxWidth().padding(top = 14.dp)) {
-        Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color.Black)) {
-            PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
-            subtitle?.let {
-                Text(
-                    it,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 32.dp, vertical = 20.dp).background(Color(0xB3000000), RoundedCornerShape(6.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    lineHeight = 32.sp,
+    val effectiveScaleMode = effectiveVideoScaleMode(scaleMode, videoSize)
+    BackHandler(enabled = controlsVisible) { controlsVisible = false }
+    Box(
+        Modifier.fillMaxSize().background(Color.Black).focusRequester(playerFocus).focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                    controlsVisible = true
+                    true
+                } else {
+                    false
+                }
+            },
+    ) {
+        VideoSurface(player, effectiveScaleMode, videoSize, density.density)
+        subtitle?.let {
+            Text(
+                it,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 32.dp, vertical = if (controlsVisible) 148.dp else 28.dp)
+                    .background(Color(0xB3000000), RoundedCornerShape(6.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
+                color = Color.White,
+                fontSize = 24.sp,
+                lineHeight = 32.sp,
+            )
+        }
+        if (subtitles.isEmpty() && embeddedSubtitle.isBlank()) Text("未检测到字幕", color = Color(0xFFA8B8C7), fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(24.dp))
+        error?.let { Text(it, color = Color(0xFFFFA3A3), fontSize = 18.sp, modifier = Modifier.align(Alignment.Center).background(Color(0xCC101A26)).padding(16.dp)) }
+        if (controlsVisible) {
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().background(Color(0xE6101A26)).padding(horizontal = 28.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TvButton("返回", onClick = onBack)
+                }
+                Spacer(Modifier.weight(1f))
+                MediaControls(
+                    player = player,
+                    playing = playing,
+                    position = position,
+                    duration = duration,
+                    modifier = Modifier.fillMaxWidth().background(Color(0xE6101A26)).padding(horizontal = 28.dp, vertical = 18.dp).focusRequester(controlFocus),
+                    speed = speed,
+                    onSpeed = {
+                        speed = when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f }
+                        player.setPlaybackSpeed(speed)
+                    },
+                    scaleMode = effectiveScaleMode,
+                    onScaleMode = { scaleMode = scaleMode.next() },
                 )
             }
-            if (subtitles.isEmpty() && embeddedSubtitle.isBlank()) Text("未检测到字幕", color = Color(0xFFA8B8C7), fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
-            error?.let { Text(it, color = Color(0xFFFFA3A3), fontSize = 18.sp, modifier = Modifier.align(Alignment.Center).background(Color(0xCC101A26)).padding(16.dp)) }
         }
-        MediaControls(
-            player = player,
-            playing = playing,
-            position = position,
-            duration = duration,
-            modifier = Modifier.focusRequester(controlFocus),
-            speed = speed,
-            onSpeed = {
-                speed = when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f }
-                player.setPlaybackSpeed(speed)
+    }
+}
+
+@Composable
+private fun VideoSurface(player: ExoPlayer, mode: VideoScaleMode, videoSize: VideoSize, density: Float) {
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
+        val modifier = when {
+            mode == VideoScaleMode.Original -> Modifier.requiredSize((videoSize.width / density).dp, (videoSize.height / density).dp)
+            mode.targetRatio != null -> Modifier.fillMaxSize().aspectRatio(mode.targetRatio, matchHeightConstraintsFirst = true)
+            else -> Modifier.fillMaxSize()
+        }
+        AndroidView(
+            factory = { PlayerView(it).apply { useController = false } },
+            update = { view ->
+                view.player = player
+                view.resizeMode = mode.resizeMode
             },
+            modifier = modifier,
         )
     }
 }
+
+@Composable
+private fun MediaControls(
+    player: ExoPlayer,
+    playing: Boolean,
+    position: Long,
+    duration: Long,
+    modifier: Modifier = Modifier,
+    speed: Float? = null,
+    onSpeed: (() -> Unit)? = null,
+    scaleMode: VideoScaleMode? = null,
+    onScaleMode: (() -> Unit)? = null,
+) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        TvButton(if (playing) "暂停" else "播放", onClick = { if (player.isPlaying) player.pause() else player.play() })
+        TvButton("−10秒", onClick = { player.seekTo((position - 10_000).coerceAtLeast(0)) })
+        SeekProgress(position, duration, { player.seekTo(it) }, Modifier.weight(1f))
+        TvButton("+10秒", onClick = { player.seekTo((position + 10_000).coerceAtMost(duration)) })
+        if (speed != null && onSpeed != null) TvButton("${speed}×", onClick = onSpeed)
+        if (scaleMode != null && onScaleMode != null) TvButton(scaleMode.label, onClick = onScaleMode)
+        Text("${format(position)} / ${format(duration)}", color = Color(0xFFA8B8C7), fontSize = 18.sp)
+    }
+}
+
 
 private fun format(ms: Long): String {
     val total = TimeUnit.MILLISECONDS.toSeconds(ms)
