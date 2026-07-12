@@ -239,11 +239,7 @@ internal fun restoreImagePreview(
     restore(state)
 }
 
-internal suspend fun loadCachedImageModel(
-    source: FileSource,
-    item: FileItem,
-    cache: suspend (FileSource, FileItem) -> File,
-): ImageModel = ImageModel(source, item, cache(source, item))
+internal fun loadImageModel(source: FileSource, item: FileItem): ImageModel = ImageModel(source, item)
 
 internal fun resolveBrowserPath(currentPath: String, enteredPath: String): String {
     val entered = enteredPath.trim().replace('\\', '/')
@@ -569,7 +565,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         previewJob = viewModelScope.launch {
             try {
-                val image = loadCachedImageModel(source, item, thumbnails::cachedImageFile)
+                val image = loadImageModel(source, item)
                 if (_state.value.screen == screen) {
                     _state.update { it.copy(preview = PreviewState(image = image, placeholder = it.preview.placeholder)) }
                 }

@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SingletonImageLoader.setSafe { context ->
-            ImageLoader.Builder(context).components {
+            ImageLoader.Builder(context).diskCache { null }.components {
                 add(ImageModelKeyer())
                 add(FileSourceImageFetcher.Factory())
             }.build()

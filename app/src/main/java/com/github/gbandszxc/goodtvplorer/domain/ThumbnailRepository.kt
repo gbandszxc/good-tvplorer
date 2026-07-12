@@ -58,23 +58,27 @@ class ThumbnailRepository internal constructor(
                 partial.delete()
             }
         }
-        return thumbnailer(cachedImageFileLocked(source, item, key), file)
-    }
-
-    suspend fun cachedImageFile(source: FileSource, item: FileItem): File = withContext(Dispatchers.IO) {
-        val key = item.cacheKey()
-        lockFor(key).withLock { cachedImageFileLocked(source, item, key) }
+        return streamThumbnail(source, item, file)
     }
 
     private fun lockFor(key: String): Mutex = imageLocks[key] ?: Mutex().let { imageLocks.putIfAbsent(key, it) ?: it }
 
-    private suspend fun cachedImageFileLocked(source: FileSource, item: FileItem, key: String): File {
-        val directory = File(cacheDir, "image-cache")
-        val file = File(directory, hash(key))
-        if (file.exists() && file.length() > 0L) return file
-        source.copyTo(item.handle.path, file)
-        check(file.exists() && file.length() > 0L) { "原图缓存写入失败：${item.name}" }
-        return file
+    private suspend fun streamThumbnail(source: FileSource, item: FileItem, target: File): File? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        source.openStream(item.handle.path).use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 640) sample *= 2
+        val bitmap = source.openStream(item.handle.path).use { input ->
+            BitmapFactory.decodeStream(input, null, BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.RGB_565 })
+        } ?: return null
+        target.parentFile?.mkdirs()
+        return try {
+            target.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 70, it) }
+            target.takeIf { it.length() > 0L }
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     private suspend fun audioCover(source: FileSource, item: FileItem, key: String): File? {

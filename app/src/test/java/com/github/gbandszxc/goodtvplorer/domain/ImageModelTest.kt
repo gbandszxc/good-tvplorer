@@ -12,7 +12,6 @@ import java.io.File
 import java.io.InputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.io.path.createTempFile
 import kotlinx.coroutines.runBlocking
 
 class ImageModelTest {
@@ -30,25 +29,8 @@ class ImageModelTest {
     }
 
     @Test
-    fun `open returns cached stream and disk data source`() = runBlocking {
-        val cached = createTempFile("good-tvplorer-image-", ".jpg").toFile().apply { writeText("cached") }
-        try {
-            val model = ImageModel(source, item, cached)
-            val opened = model.open()
-
-            assertEquals("cached", opened.stream.bufferedReader().use { it.readText() })
-            assertEquals(DataSource.DISK, opened.dataSource)
-            assertEquals(0, source.openCount)
-        } finally {
-            cached.delete()
-        }
-    }
-
-    @Test
-    fun `open returns network stream when cached file is missing`() = runBlocking {
-        val missing = createTempFile("good-tvplorer-missing-", ".jpg").toFile().apply { delete() }
-
-        val opened = ImageModel(source, item, missing).open()
+    fun `open always returns the SMB source stream`() = runBlocking {
+        val opened = ImageModel(source, item).open()
 
         assertEquals("source", opened.stream.bufferedReader().use { it.readText() })
         assertEquals(DataSource.NETWORK, opened.dataSource)

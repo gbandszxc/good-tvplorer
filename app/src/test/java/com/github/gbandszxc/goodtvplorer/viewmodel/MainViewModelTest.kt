@@ -141,23 +141,12 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `image preview model uses the shared cached original`() = runBlocking {
+    fun `image preview model keeps the SMB source without a local original copy`() {
         val source = FakeSource()
         val item = imageItem()
-        val cached = File.createTempFile("goodtvplorer-preview", ".jpg").apply { writeText("cached") }
-        var cacheCalls = 0
-
-        val model = loadCachedImageModel(source, item) { actualSource, actualItem ->
-            assertSame(source, actualSource)
-            assertSame(item, actualItem)
-            cacheCalls++
-            cached
-        }
-
-        assertEquals(1, cacheCalls)
-        assertSame(cached, model.cachedImageFile)
-        cached.delete()
-        Unit
+        val model = loadImageModel(source, item)
+        assertSame(source, model.source)
+        assertSame(item, model.item)
     }
 
     @Test
