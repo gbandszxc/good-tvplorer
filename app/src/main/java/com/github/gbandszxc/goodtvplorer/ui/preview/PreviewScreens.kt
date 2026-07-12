@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.compose.PlayerSurface
 import coil3.compose.AsyncImage
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
@@ -362,18 +363,72 @@ private fun SeekProgress(position: Long, duration: Long, onSeek: (Long) -> Unit,
 
 @Composable
 fun VideoPreview(name: String, state: PreviewState, onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xFF05080D))) {
+    Column(Modifier.fillMaxSize().background(Color(0xFF05080D)).padding(horizontal = 28.dp, vertical = 20.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TvButton("返回", onClick = onBack)
+        }
         when {
-            state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-            state.error != null -> Text(state.error, color = Color(0xFFFFA3A3), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
-            state.file != null -> AsyncImage(model = state.file, contentDescription = name, modifier = Modifier.fillMaxSize().padding(48.dp), contentScale = ContentScale.Fit)
-            else -> Text("没有可用的视频缩略图", color = Color(0xFFC8D5E2), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
+            state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFFA3A3), fontSize = 26.sp) }
+            state.media != null -> VideoPlayer(state.media, state.timedText, Modifier.weight(1f))
         }
-        Column(Modifier.align(Alignment.TopStart).padding(28.dp)) {
-            Text(name, color = Color.White, fontSize = 26.sp, maxLines = 1)
-            Text("视频预览 · 播放器后续接入", color = Color(0xFFFFC857), fontSize = 18.sp)
+    }
+}
+
+@Composable
+private fun VideoPlayer(media: StreamingMedia, subtitles: List<TimedTextCue>, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val player = remember(media) {
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(FileSourceDataSource.Factory(media)))
+            .build().apply { setMediaItem(MediaItem.fromUri(media.uri)); prepare() }
+    }
+    var playing by remember { mutableStateOf(false) }
+    var position by remember { mutableLongStateOf(0L) }
+    var duration by remember { mutableLongStateOf(0L) }
+    var speed by remember { mutableStateOf(1f) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val controlFocus = remember { FocusRequester() }
+    DisposableEffect(player) { onDispose { player.release() } }
+    LaunchedEffect(player) {
+        controlFocus.requestFocus()
+        while (true) {
+            position = player.currentPosition.coerceAtLeast(0)
+            duration = player.duration.takeIf { it > 0 } ?: 0L
+            playing = player.isPlaying
+            error = player.playerError?.message
+            delay(250)
         }
-        TvButton("返回", modifier = Modifier.align(Alignment.TopEnd).padding(24.dp), onClick = onBack)
+    }
+    val subtitle = subtitles.lastOrNull { position >= it.startMs }?.takeIf { position < it.endMs }
+    Column(modifier.fillMaxWidth().padding(top = 14.dp)) {
+        Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color.Black)) {
+            PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
+            subtitle?.let {
+                Text(
+                    it.text,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 32.dp, vertical = 20.dp).background(Color(0xB3000000), RoundedCornerShape(6.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    lineHeight = 32.sp,
+                )
+            }
+            if (subtitles.isEmpty()) Text("未找到同名 SRT 字幕", color = Color(0xFFA8B8C7), fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
+            error?.let { Text(it, color = Color(0xFFFFA3A3), fontSize = 18.sp, modifier = Modifier.align(Alignment.Center).background(Color(0xCC101A26)).padding(16.dp)) }
+        }
+        MediaControls(
+            player = player,
+            playing = playing,
+            position = position,
+            duration = duration,
+            modifier = Modifier.focusRequester(controlFocus),
+            speed = speed,
+            onSpeed = {
+                speed = when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f }
+                player.setPlaybackSpeed(speed)
+            },
+        )
     }
 }
 
