@@ -20,6 +20,8 @@ class FileSourceDataSource(private val media: StreamingMedia) : BaseDataSource(f
     private var position = 0L
     private var remaining = 0L
     private var opened = false
+    private var readBuffer = ByteArray(0)
+    private var bufferPosition = 0L
 
     override fun open(dataSpec: DataSpec): Long {
         transferInitializing(dataSpec)
@@ -31,6 +33,7 @@ class FileSourceDataSource(private val media: StreamingMedia) : BaseDataSource(f
             else -> C.LENGTH_UNSET.toLong()
         }
         opened = true
+        readBuffer = ByteArray(0)
         transferStarted(dataSpec)
         return remaining
     }
@@ -38,14 +41,23 @@ class FileSourceDataSource(private val media: StreamingMedia) : BaseDataSource(f
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
         if (remaining == 0L) return C.RESULT_END_OF_INPUT
-        val requested = minOf(length.toLong(), remaining.takeIf { it != C.LENGTH_UNSET.toLong() } ?: length.toLong(), MAX_READ_BYTES.toLong()).toInt()
-        val bytes = runBlocking(Dispatchers.IO) { media.source.readRange(media.item.handle.path, position, requested) }
-        if (bytes.isEmpty()) return C.RESULT_END_OF_INPUT
-        bytes.copyInto(buffer, offset)
-        position += bytes.size
-        if (remaining != C.LENGTH_UNSET.toLong()) remaining -= bytes.size
-        bytesTransferred(bytes.size)
-        return bytes.size
+        if (position !in bufferPosition until bufferPosition + readBuffer.size) {
+            val requested = minOf(
+                maxOf(length, READ_AHEAD_BYTES).toLong(),
+                remaining.takeIf { it != C.LENGTH_UNSET.toLong() } ?: MAX_READ_BYTES.toLong(),
+                MAX_READ_BYTES.toLong(),
+            ).toInt()
+            bufferPosition = position
+            readBuffer = runBlocking(Dispatchers.IO) { media.source.readRange(media.item.handle.path, position, requested) }
+            if (readBuffer.isEmpty()) return C.RESULT_END_OF_INPUT
+        }
+        val sourceOffset = (position - bufferPosition).toInt()
+        val copied = minOf(length.toLong(), (readBuffer.size - sourceOffset).toLong(), remaining.takeIf { it != C.LENGTH_UNSET.toLong() } ?: length.toLong()).toInt()
+        readBuffer.copyInto(destination = buffer, destinationOffset = offset, startIndex = sourceOffset, endIndex = sourceOffset + copied)
+        position += copied
+        if (remaining != C.LENGTH_UNSET.toLong()) remaining -= copied
+        bytesTransferred(copied)
+        return copied
     }
 
     override fun getUri(): Uri = media.uri
@@ -61,6 +73,7 @@ class FileSourceDataSource(private val media: StreamingMedia) : BaseDataSource(f
 
     private companion object {
         const val MAX_READ_BYTES = 1024 * 1024
+        const val READ_AHEAD_BYTES = 256 * 1024
     }
 }
 

@@ -51,6 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.text.CueGroup
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.compose.PlayerSurface
@@ -309,7 +311,7 @@ private fun AudioPlayer(media: StreamingMedia, lyrics: List<TimedTextCue>, modif
             duration = player.duration.takeIf { it > 0 } ?: 0L
             playing = player.isPlaying
             artwork = player.mediaMetadata.artworkData ?: artwork
-            error = player.playerError?.message
+            error = player.playerError?.let(::playbackErrorMessage)
             delay(250)
         }
     }
@@ -389,32 +391,41 @@ private fun VideoPlayer(media: StreamingMedia, subtitles: List<TimedTextCue>, mo
     var duration by remember { mutableLongStateOf(0L) }
     var speed by remember { mutableStateOf(1f) }
     var error by remember { mutableStateOf<String?>(null) }
+    var embeddedSubtitle by remember { mutableStateOf("") }
     val controlFocus = remember { FocusRequester() }
-    DisposableEffect(player) { onDispose { player.release() } }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onCues(cueGroup: CueGroup) {
+                embeddedSubtitle = cueGroup.cues.mapNotNull { it.text?.toString() }.joinToString("\n")
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener); player.release() }
+    }
     LaunchedEffect(player) {
         controlFocus.requestFocus()
         while (true) {
             position = player.currentPosition.coerceAtLeast(0)
             duration = player.duration.takeIf { it > 0 } ?: 0L
             playing = player.isPlaying
-            error = player.playerError?.message
+            error = player.playerError?.let(::playbackErrorMessage)
             delay(250)
         }
     }
-    val subtitle = subtitles.lastOrNull { position >= it.startMs }?.takeIf { position < it.endMs }
+    val subtitle = subtitles.lastOrNull { position >= it.startMs }?.takeIf { position < it.endMs }?.text ?: embeddedSubtitle.takeIf(String::isNotBlank)
     Column(modifier.fillMaxWidth().padding(top = 14.dp)) {
         Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Color.Black)) {
             PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
             subtitle?.let {
                 Text(
-                    it.text,
+                    it,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 32.dp, vertical = 20.dp).background(Color(0xB3000000), RoundedCornerShape(6.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
                     color = Color.White,
                     fontSize = 24.sp,
                     lineHeight = 32.sp,
                 )
             }
-            if (subtitles.isEmpty()) Text("未找到同名 SRT 字幕", color = Color(0xFFA8B8C7), fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
+            if (subtitles.isEmpty() && embeddedSubtitle.isBlank()) Text("未检测到字幕", color = Color(0xFFA8B8C7), fontSize = 16.sp, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp))
             error?.let { Text(it, color = Color(0xFFFFA3A3), fontSize = 18.sp, modifier = Modifier.align(Alignment.Center).background(Color(0xCC101A26)).padding(16.dp)) }
         }
         MediaControls(
@@ -435,4 +446,10 @@ private fun VideoPlayer(media: StreamingMedia, subtitles: List<TimedTextCue>, mo
 private fun format(ms: Long): String {
     val total = TimeUnit.MILLISECONDS.toSeconds(ms)
     return "%02d:%02d".format(total / 60, total % 60)
+}
+
+private fun playbackErrorMessage(error: androidx.media3.common.PlaybackException): String = when {
+    error.message?.contains("MediaCodecVideoRenderer") == true -> "当前设备不支持此视频编码"
+    error.message?.contains("MediaCodecAudioRenderer") == true -> "当前设备不支持此音频编码"
+    else -> "媒体加载失败，请检查文件或网络连接"
 }
