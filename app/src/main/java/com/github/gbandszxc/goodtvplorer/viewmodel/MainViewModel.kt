@@ -15,7 +15,10 @@ import com.github.gbandszxc.goodtvplorer.data.cacheKey
 import com.github.gbandszxc.goodtvplorer.data.persistence.BrowserNavigationRepository
 import com.github.gbandszxc.goodtvplorer.data.persistence.DisplaySettingsRepository
 import com.github.gbandszxc.goodtvplorer.data.persistence.SmbConnectionRepository
-import com.github.gbandszxc.goodtvplorer.domain.AudioCacheManager
+import com.github.gbandszxc.goodtvplorer.domain.StreamingMedia
+import com.github.gbandszxc.goodtvplorer.domain.TimedTextCue
+import com.github.gbandszxc.goodtvplorer.domain.parseLrc
+import com.github.gbandszxc.goodtvplorer.domain.parseSrt
 import com.github.gbandszxc.goodtvplorer.domain.ImageModel
 import com.github.gbandszxc.goodtvplorer.domain.PreviewMetadata
 import com.github.gbandszxc.goodtvplorer.domain.PreviewMetadataRepository
@@ -79,6 +82,8 @@ data class PreviewState(
     val placeholder: File? = null,
     val text: String = "",
     val truncated: Boolean = false,
+    val media: StreamingMedia? = null,
+    val timedText: List<TimedTextCue> = emptyList(),
     val error: String? = null,
 )
 
@@ -255,7 +260,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val displaySettings = DisplaySettingsRepository(app)
     private val navigation = BrowserNavigationRepository(app)
     private val thumbnails = ThumbnailRepository(app)
-    private val audioCache = AudioCacheManager(app)
     private val previewMetadata = PreviewMetadataRepository()
     private val sources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailSources = mutableMapOf<String, FileSource>(local.key to local)
@@ -489,8 +493,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             FileKind.Image -> prepareImage(item, imageViewerItems(_state.value.browser.items, _state.value.browserSort, item))
             FileKind.Text -> prepareText(item.handle, item.name)
-            FileKind.Audio -> prepareAudio(item.handle, item.name)
-            FileKind.Video -> prepareVideo(item.handle, item.name)
+            FileKind.Audio -> prepareMedia(item, isAudio = true)
+            FileKind.Video -> prepareMedia(item, isAudio = false)
             FileKind.Other -> showError("暂不支持打开此文件类型")
         }
     }
@@ -597,15 +601,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun prepareAudio(handle: FileHandle, name: String) {
-        val source = sources[handle.sourceKey] ?: return showError("文件源不存在")
-        val screen = Screen.AudioPreview(handle.sourceKey, handle.path, name)
+    private fun prepareMedia(item: FileItem, isAudio: Boolean) {
+        val source = sources[item.handle.sourceKey] ?: return showError("文件源不存在")
+        val screen: Screen = if (isAudio) Screen.AudioPreview(item.handle.sourceKey, item.handle.path, item.name)
+            else Screen.VideoPreview(item.handle.sourceKey, item.handle.path, item.name)
         previewJob?.cancel()
         _state.update { it.copy(screen = screen, preview = PreviewState(loading = true)) }
         previewJob = viewModelScope.launch {
             try {
-                val file = audioCache.cachedFile(source, handle)
-                if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(file = file)) }
+                val extension = if (isAudio) "lrc" else "srt"
+                val companion = companionFile(item, extension)
+                val timedText = companion?.let {
+                    val bytes = source.readPrefix(it.handle.path, 1024 * 1024 + 1)
+                    val text = bytes.take(1024 * 1024).toByteArray().toString(Charsets.UTF_8)
+                    if (isAudio) parseLrc(text) else parseSrt(text)
+                }.orEmpty()
+                if (_state.value.screen == screen) _state.update {
+                    it.copy(preview = PreviewState(media = StreamingMedia(source, item), timedText = timedText))
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -614,20 +627,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun prepareVideo(handle: FileHandle, name: String) {
-        val source = sources[handle.sourceKey] ?: return showError("文件源不存在")
-        val screen = Screen.VideoPreview(handle.sourceKey, handle.path, name)
-        previewJob?.cancel()
-        _state.update { it.copy(screen = screen, preview = PreviewState(loading = true)) }
-        previewJob = viewModelScope.launch {
-            try {
-                val file = thumbnails.previewFile(source, handle, FileKind.Video)
-                if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(file = file)) }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(error = readable(error))) }
-            }
+    private fun companionFile(item: FileItem, extension: String): FileItem? {
+        val base = item.name.substringBeforeLast('.', item.name)
+        return _state.value.browser.items.firstOrNull {
+            it.name.equals("$base.$extension", ignoreCase = true) && it.handle.path.substringBeforeLast('/', "") == item.handle.path.substringBeforeLast('/', "")
         }
     }
 

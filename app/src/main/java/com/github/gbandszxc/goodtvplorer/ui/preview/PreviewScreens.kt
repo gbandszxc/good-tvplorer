@@ -1,6 +1,5 @@
 package com.github.gbandszxc.goodtvplorer.ui.preview
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -45,16 +44,22 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import coil3.compose.AsyncImage
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
 import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
+import com.github.gbandszxc.goodtvplorer.domain.FileSourceDataSource
+import com.github.gbandszxc.goodtvplorer.domain.StreamingMedia
+import com.github.gbandszxc.goodtvplorer.domain.TimedTextCue
 import com.github.gbandszxc.goodtvplorer.viewmodel.MainViewModel
 import com.github.gbandszxc.goodtvplorer.viewmodel.PreviewState
 import kotlinx.coroutines.delay
@@ -268,47 +273,90 @@ internal fun textPages(text: String, linesPerPage: Int = 14): List<List<Numbered
 
 @Composable
 fun AudioPreview(name: String, state: PreviewState, onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(horizontal = 36.dp, vertical = 24.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            TvButton("返回", onClick = onBack)
+        }
+        when {
+            state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp) }
+            state.media != null -> AudioPlayer(state.media, state.timedText, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun AudioPlayer(media: StreamingMedia, lyrics: List<TimedTextCue>, modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val player = remember(media) {
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(FileSourceDataSource.Factory(media)))
+            .build().apply { setMediaItem(MediaItem.fromUri(media.uri)); prepare() }
+    }
     var playing by remember { mutableStateOf(false) }
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
-    val player = remember { ExoPlayer.Builder(context).build() }
-
-    DisposableEffect(Unit) { onDispose { player.release() } }
-    LaunchedEffect(state.file) {
-        state.file?.let {
-            player.setMediaItem(MediaItem.fromUri(Uri.fromFile(it)))
-            player.prepare()
-        }
-    }
+    var artwork by remember { mutableStateOf<ByteArray?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val controlFocus = remember { FocusRequester() }
+    DisposableEffect(player) { onDispose { player.release() } }
     LaunchedEffect(player) {
+        controlFocus.requestFocus()
         while (true) {
             position = player.currentPosition.coerceAtLeast(0)
             duration = player.duration.takeIf { it > 0 } ?: 0L
             playing = player.isPlaying
-            delay(500)
+            artwork = player.mediaMetadata.artworkData ?: artwork
+            error = player.playerError?.message
+            delay(250)
         }
     }
+    val lyric = lyrics.lastOrNull { position >= it.startMs }?.takeIf { position < it.endMs }
+    Column(modifier.fillMaxWidth()) {
+    Row(Modifier.padding(top = 18.dp).weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+        Box(Modifier.weight(0.38f).fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0xFF101A26)), contentAlignment = Alignment.Center) {
+            if (artwork != null) AsyncImage(model = artwork, contentDescription = "音频封面", modifier = Modifier.fillMaxSize().padding(12.dp), contentScale = ContentScale.Fit)
+            else Text("AUD", color = Color(0xFF7CC7D8), fontSize = 40.sp)
+        }
+        Box(Modifier.weight(0.62f).fillMaxSize().background(Color(0xFF101A26)).padding(24.dp), contentAlignment = Alignment.Center) {
+            Text(lyric?.text ?: if (lyrics.isEmpty()) "未找到同名 LRC 歌词" else "♪", color = if (lyric == null) Color(0xFFA8B8C7) else Color(0xFFF3F7FA), fontSize = 28.sp, lineHeight = 40.sp)
+        }
+    }
+    error?.let { Text(it, color = Color(0xFFFFA3A3), fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)) }
+    MediaControls(player, playing, position, duration, modifier = Modifier.focusRequester(controlFocus))
+    }
+}
 
-    Column(Modifier.fillMaxSize().background(Color(0xFF101418)).padding(56.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(name, color = Color.White, fontSize = 32.sp)
-            TvButton("返回", onClick = {
-                player.stop()
-                onBack()
-            })
-        }
-        when {
-            state.loading -> CircularProgressIndicator()
-            state.error != null -> Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp)
-            state.file != null -> {
-                TvButton(if (playing) "暂停" else "播放") {
-                    if (player.isPlaying) player.pause() else player.play()
+@Composable
+private fun MediaControls(player: ExoPlayer, playing: Boolean, position: Long, duration: Long, modifier: Modifier = Modifier, speed: Float? = null, onSpeed: (() -> Unit)? = null) {
+    Row(modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        TvButton(if (playing) "暂停" else "播放", onClick = { if (player.isPlaying) player.pause() else player.play() })
+        TvButton("−10秒", onClick = { player.seekTo((position - 10_000).coerceAtLeast(0)) })
+        SeekProgress(position, duration, { player.seekTo(it) }, Modifier.weight(1f))
+        TvButton("+10秒", onClick = { player.seekTo((position + 10_000).coerceAtMost(duration)) })
+        if (speed != null && onSpeed != null) TvButton("${speed}×", onClick = onSpeed)
+        Text("${format(position)} / ${format(duration)}", color = Color(0xFFA8B8C7), fontSize = 18.sp)
+    }
+}
+
+@Composable
+private fun SeekProgress(position: Long, duration: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier.height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (focused) Color(0xFF152232) else Color(0xFF101A26))
+            .border(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color(0xFF26384B), RoundedCornerShape(8.dp))
+            .onFocusChanged { focused = it.isFocused }.focusable().semantics { contentDescription = "播放进度，左右键快进或后退" }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) false else when (event.key) {
+                    Key.DirectionLeft -> { onSeek((position - 10_000).coerceAtLeast(0)); true }
+                    Key.DirectionRight -> { onSeek((position + 10_000).coerceAtMost(duration)); true }
+                    else -> false
                 }
-                LinearProgressIndicator(progress = { if (duration == 0L) 0f else position.toFloat() / duration }, modifier = Modifier.fillMaxWidth())
-                Text("${format(position)} / ${format(duration)}", color = Color(0xFFCBD5E1), fontSize = 24.sp)
-            }
-        }
+            }.padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        LinearProgressIndicator(progress = { if (duration <= 0) 0f else position.toFloat() / duration }, modifier = Modifier.fillMaxWidth(), color = Color(0xFFFFC857), trackColor = Color(0xFF26384B))
     }
 }
 
