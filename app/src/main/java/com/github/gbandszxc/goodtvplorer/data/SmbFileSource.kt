@@ -126,45 +126,7 @@ internal inline fun copyStreamCancellable(
 internal fun smbReadBufferSize(negotiatedMaxReadSize: Int): Int =
     negotiatedMaxReadSize.coerceIn(64 * 1024, 1024 * 1024)
 
-internal class IdleResourceVerifier(
-    private val clockNanos: () -> Long = System::nanoTime,
-    private val idleNanos: Long,
-) {
-    private var lastVerifiedNanos = clockNanos()
-    private var activeCount = 0
-
-    @Synchronized
-    fun isUsable(connected: Boolean): Boolean {
-        if (!connected) return false
-        if (activeCount > 0) return true
-        val now = clockNanos()
-        return now - lastVerifiedNanos <= idleNanos
-    }
-
-    @Synchronized
-    fun retain() {
-        activeCount++
-    }
-
-    @Synchronized
-    fun release() {
-        check(activeCount > 0) { "资源 lease 计数不匹配" }
-        activeCount--
-    }
-
-    @Synchronized
-    fun markActive() {
-        lastVerifiedNanos = clockNanos()
-    }
-
-    @Synchronized
-    fun hasActiveLeases(): Boolean = activeCount > 0
-}
-
-class SmbFileSource(
-    private val info: SmbConnectionInfo,
-    private val freshConnectionPerOperation: Boolean = false,
-) : FileSource, AutoCloseable {
+class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoCloseable {
     override val key = "smb:${info.id}"
     override val kind = SourceKind.Smb
     override val title = info.name
@@ -181,7 +143,6 @@ class SmbFileSource(
     )
 
     override suspend fun list(path: String): List<FileItem> = withContext(Dispatchers.IO) {
-        if (freshConnectionPerOperation) resources.invalidateCurrentIf { true }
         val started = System.nanoTime()
         var generation = 0L
         var count = 0
@@ -243,7 +204,6 @@ class SmbFileSource(
         val started = System.nanoTime()
         var copiedBytes = 0L
         try {
-            if (freshConnectionPerOperation) resources.invalidateCurrentIf { true }
             val (fileSize, chunkSize) = withShare { current ->
                 current.share.getFileInformation(path.trim('/')).standardInformation.endOfFile to current.readBufferSize
             }
@@ -306,7 +266,6 @@ class SmbFileSource(
 
     private fun openRetainedFile(path: String): OpenedFile = withShare {
         val file = openFile(it.share, path)
-        it.resource.retain()
         OpenedFile(file, it.generation, it.readBufferSize, it.resource)
     }
 
@@ -320,8 +279,6 @@ class SmbFileSource(
         useResourceWithRetryOnce(
             resources = resources,
             retryable = ::isRetryable,
-            retain = SmbResources::retain,
-            release = SmbResources::release,
         ) { current ->
             logPerformance("resourceAcquire", started, current.generation, null, count = 1)
             block(
@@ -331,7 +288,7 @@ class SmbFileSource(
                     readBufferSize = current.value.readBufferSize,
                     resource = current.value,
                 ),
-            ).also { current.value.markActive() }
+            )
         }
     } catch (e: Exception) {
         throwSmbFailure(e)
@@ -355,7 +312,6 @@ class SmbFileSource(
                 nextConnection,
                 nextSession,
                 nextShare,
-                IdleResourceVerifier(idleNanos = IDLE_RECONNECT_NANOS),
             ).also { connected = true }
         } catch (e: Exception) {
             runCatching { nextShare?.close() }
@@ -382,7 +338,6 @@ class SmbFileSource(
         private var offset = 0L
         private var mayReconnect = true
         private var closed = false
-        private var ownsLease = true
         private val started = System.nanoTime()
         private var totalBytes = 0L
 
@@ -400,11 +355,9 @@ class SmbFileSource(
                     mayReconnect = false
                     runCatching { opened.file.close() }
                     synchronized(resources) {
-                        opened.resource.release()
-                        ownsLease = false
                         resources.invalidate(opened.generation)
                     }
-                    opened = openRetainedFile(path).also { ownsLease = true }
+                    opened = openRetainedFile(path)
                 },
             ) {
                 opened.file.read(buffer, offset, start, length)
@@ -412,7 +365,6 @@ class SmbFileSource(
             if (read > 0) {
                 offset += read
                 totalBytes += read
-                opened.resource.markActive()
             }
             return read
         }
@@ -421,10 +373,6 @@ class SmbFileSource(
             if (closed) return
             closed = true
             runCatching { opened.file.close() }
-            if (ownsLease) {
-                opened.resource.release()
-                ownsLease = false
-            }
             logPerformance("stream", started, opened.generation, path, bytes = totalBytes, count = 1)
         }
     }
@@ -462,21 +410,13 @@ class SmbFileSource(
         val connection: Connection,
         val session: Session,
         val share: DiskShare,
-        val verifier: IdleResourceVerifier,
     ) {
         val readBufferSize = smbReadBufferSize(connection.negotiatedProtocol.maxReadSize)
 
-        fun isUsable() = verifier.isUsable(share.isConnected && connection.isConnected)
-
-        fun retain() = verifier.retain()
-
-        fun release() = verifier.release()
-
-        fun markActive() = verifier.markActive()
-
-        fun isIdle() = !verifier.hasActiveLeases()
+        fun isUsable() = share.isConnected && connection.isConnected
 
         fun close() {
+            if (!connection.isConnected) return
             runCatching { share.close() }
             runCatching { session.close() }
             runCatching { connection.close() }
@@ -488,7 +428,6 @@ class SmbFileSource(
         const val TAG = "SmbFileSource"
         const val READ_AHEAD_REQUESTS = 4
         const val PIPELINED_COPY_MIN_BYTES = 4L * 1024 * 1024
-        val IDLE_RECONNECT_NANOS = TimeUnit.SECONDS.toNanos(5)
     }
 
     private data class PendingRead(

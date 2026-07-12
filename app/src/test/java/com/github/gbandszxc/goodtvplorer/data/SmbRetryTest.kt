@@ -9,74 +9,12 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SmbRetryTest {
     @Test
     fun `negotiated SMB reads are capped at one MiB for pipelining`() {
         assertEquals(1024 * 1024, smbReadBufferSize(8 * 1024 * 1024))
-    }
-
-    @Test
-    fun `fresh connection is reused without probe`() {
-        var now = 0L
-        val verifier = IdleResourceVerifier(clockNanos = { now }, idleNanos = 5_000_000_000L)
-
-        assertTrue(verifier.isUsable(connected = true))
-    }
-
-    @Test
-    fun `idle connection is replaced without touching stale socket`() {
-        var now = 0L
-        val verifier = IdleResourceVerifier(clockNanos = { now }, idleNanos = 5_000_000_000L)
-
-        now = 6_000_000_000L
-
-        assertFalse(verifier.isUsable(connected = true))
-    }
-
-    @Test
-    fun `successful activity refreshes idle lifetime`() {
-        var now = 0L
-        val verifier = IdleResourceVerifier(clockNanos = { now }, idleNanos = 5_000_000_000L)
-
-        now = 4_000_000_000L
-        verifier.markActive()
-        now = 8_000_000_000L
-        assertTrue(verifier.isUsable(connected = true))
-        now = 10_000_000_000L
-        assertFalse(verifier.isUsable(connected = true))
-    }
-
-    @Test
-    fun `idle resource reconnects after active lease releases`() {
-        var now = 0L
-        var created = 0
-        val closed = mutableListOf<Int>()
-        data class Resource(val id: Int, val verifier: IdleResourceVerifier)
-        val resources = ReusableResource(
-            factory = {
-                val id = ++created
-                Resource(id, IdleResourceVerifier({ now }, 5_000_000_000L))
-            },
-            usable = { it.verifier.isUsable(connected = true) },
-            close = { closed += it.id },
-        )
-        val active = resources.acquire().value
-        active.verifier.retain()
-
-        now = 6_000_000_000L
-        val reused = resources.acquire()
-
-        assertEquals(1, reused.value.id)
-        assertEquals(emptyList(), closed)
-
-        active.verifier.release()
-        val replacement = resources.acquire()
-
-        assertEquals(2, replacement.value.id)
-        assertEquals(listOf(1), closed)
     }
 
     @Test

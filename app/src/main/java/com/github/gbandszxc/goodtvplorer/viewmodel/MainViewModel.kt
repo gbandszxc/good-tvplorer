@@ -288,7 +288,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     oldThumbnailSources.forEach(SmbFileSource::close)
                 }
                 connections.forEach { info ->
-                    sources["smb:${info.id}"] = SmbFileSource(info, freshConnectionPerOperation = true)
+                    sources["smb:${info.id}"] = SmbFileSource(info)
                     thumbnailSources["smb:${info.id}"] = SmbFileSource(info)
                 }
                 _state.update { it.copy(smbConnections = connections) }
