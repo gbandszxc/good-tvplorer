@@ -37,8 +37,8 @@ fun TvButton(
     text: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 28.dp, vertical = 18.dp),
-    fontSize: TextUnit = 24.sp,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+    fontSize: TextUnit = 20.sp,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
