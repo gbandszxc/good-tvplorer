@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.media.MediaDataSource
 import android.media.ThumbnailUtils
 import android.os.Build
 import android.util.Size
@@ -33,7 +34,14 @@ class ThumbnailRepository internal constructor(
 
     suspend fun thumbnailFile(source: FileSource, item: FileItem): File? = withContext(Dispatchers.IO) {
         val key = item.cacheKey()
-        lockFor(key).withLock { thumbnailFileLocked(source, item, key) }
+        lockFor(key).withLock {
+            when (item.kind) {
+                FileKind.Image -> thumbnailFileLocked(source, item, key)
+                FileKind.Audio -> audioCover(source, item, key)
+                FileKind.Video -> videoFrame(source, item, key)
+                FileKind.Directory, FileKind.Text, FileKind.Other -> null
+            }
+        }
     }
 
     private suspend fun thumbnailFileLocked(source: FileSource, item: FileItem, key: String): File? {
@@ -69,33 +77,11 @@ class ThumbnailRepository internal constructor(
         return file
     }
 
-    suspend fun previewFile(source: FileSource, handle: FileHandle, kind: FileKind): File? = withContext(Dispatchers.IO) {
-        when (kind) {
-            FileKind.Audio -> audioCover(source, handle)
-            FileKind.Video -> videoFrame(source, handle)
-            FileKind.Directory, FileKind.Image, FileKind.Text, FileKind.Other -> null
-        }
-    }
-
-    private suspend fun mediaCache(source: FileSource, handle: FileHandle): File {
-        val ext = handle.path.substringAfterLast('.', "bin")
-        val file = File(cacheDir, "media-preview/${hash(handle.sourceKey + "|" + handle.path)}.$ext")
-        if (!file.exists() || file.length() == 0L) {
-            // TODO: SMB 视频取缩略图会先缓存完整文件；后续改为范围读取或服务端缩略图。
-            source.copyTo(handle.path, file)
-        }
-        return file
-    }
-
-    private suspend fun audioCover(source: FileSource, handle: FileHandle): File? {
-        val target = File(cacheDir, "covers/${hash(handle.sourceKey + "|" + handle.path)}.jpg")
+    private suspend fun audioCover(source: FileSource, item: FileItem, key: String): File? {
+        val target = File(cacheDir, "covers/${hash(key)}.jpg")
         if (target.exists() && target.length() > 0L) return target
-        val media = mediaCache(source, handle)
         return runCatching {
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(media.absolutePath)
-            val picture = retriever.embeddedPicture
-            retriever.release()
+            val picture = retriever(source, item).use { it.embeddedPicture }
             if (picture == null) null else target.also {
                 it.parentFile?.mkdirs()
                 it.writeBytes(picture)
@@ -103,13 +89,11 @@ class ThumbnailRepository internal constructor(
         }.getOrNull()
     }
 
-    private suspend fun videoFrame(source: FileSource, handle: FileHandle): File? {
-        val target = File(cacheDir, "video-frames/${hash(handle.sourceKey + "|" + handle.path)}.jpg")
+    private suspend fun videoFrame(source: FileSource, item: FileItem, key: String): File? {
+        val target = File(cacheDir, "video-frames/${hash(key)}.jpg")
         if (target.exists() && target.length() > 0L) return target
-        if (Build.VERSION.SDK_INT < 29) return null
-        val media = mediaCache(source, handle)
         return runCatching {
-            val bitmap = ThumbnailUtils.createVideoThumbnail(media, Size(640, 360), null)
+            val bitmap = retriever(source, item).use { it.getFrameAtTime(VIDEO_FRAME_TIME_US, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) } ?: return null
             target.also {
                 it.parentFile?.mkdirs()
                 it.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 82, out) }
@@ -122,8 +106,13 @@ class ThumbnailRepository internal constructor(
         return digest.take(16).joinToString("") { "%02x".format(it) }
     }
 
+    private fun retriever(source: FileSource, item: FileItem) = MediaMetadataRetriever().apply {
+        setDataSource(FileSourceMediaDataSource(source, item.handle.path, item.size ?: -1L))
+    }
+
     private companion object {
         const val EXIF_PREFIX_BYTES = 256 * 1024
+        const val VIDEO_FRAME_TIME_US = 3_000_000L
 
         fun createThumbnail(cachedImage: File, target: File): File? {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -153,6 +142,18 @@ class ThumbnailRepository internal constructor(
             }
         }
     }
+}
+
+private class FileSourceMediaDataSource(private val source: FileSource, private val path: String, private val size: Long) : MediaDataSource() {
+    override fun getSize(): Long = size
+    override fun readAt(position: Long, buffer: ByteArray, offset: Int, requested: Int): Int {
+        if (position < 0 || requested <= 0) return -1
+        val bytes = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) { source.readRange(path, position, requested.coerceAtMost(1024 * 1024)) }
+        if (bytes.isEmpty()) return -1
+        bytes.copyInto(buffer, offset)
+        return bytes.size
+    }
+    override fun close() = Unit
 }
 
 internal fun extractExifThumbnail(jpeg: ByteArray): ByteArray? {

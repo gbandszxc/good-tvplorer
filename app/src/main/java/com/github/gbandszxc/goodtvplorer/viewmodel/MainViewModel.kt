@@ -91,6 +91,7 @@ data class BrowserPreviewMetadataState(
     val itemKey: String? = null,
     val loading: Boolean = false,
     val metadata: PreviewMetadata = PreviewMetadata(),
+    val textSnippet: String? = null,
 )
 
 data class MainUiState(
@@ -367,7 +368,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val key = thumbKey(item)
         if (_state.value.browserPreviewMetadata.itemKey == key) return
         browserMetadataJob?.cancel()
-        if (item.kind !in setOf(FileKind.Image, FileKind.Audio, FileKind.Video)) {
+        if (item.kind !in setOf(FileKind.Image, FileKind.Audio, FileKind.Video, FileKind.Text)) {
             _state.update { it.copy(browserPreviewMetadata = BrowserPreviewMetadataState(itemKey = key)) }
             return
         }
@@ -376,8 +377,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         browserMetadataJob = viewModelScope.launch {
             try {
                 val metadata = previewMetadata.read(source, item)
+                val textSnippet = if (item.kind == FileKind.Text) source.readPrefix(item.handle.path, 1024).toString(Charsets.UTF_8).trim().take(240) else null
                 if (_state.value.browserPreviewMetadata.itemKey == key) {
-                    _state.update { it.copy(browserPreviewMetadata = BrowserPreviewMetadataState(itemKey = key, metadata = metadata)) }
+                    _state.update { it.copy(browserPreviewMetadata = BrowserPreviewMetadataState(itemKey = key, metadata = metadata, textSnippet = textSnippet)) }
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -504,7 +506,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun requestThumbnailWork(item: FileItem): Boolean {
-        if (item.kind != FileKind.Image) return false
+        if (item.kind !in setOf(FileKind.Image, FileKind.Audio, FileKind.Video)) return false
         val key = thumbKey(item)
         if (_state.value.thumbnails.containsKey(key) || pendingThumbnails.containsKey(key)) return false
         val source = thumbnailSources[item.handle.sourceKey] ?: return false

@@ -48,6 +48,8 @@ import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
 import com.github.gbandszxc.goodtvplorer.data.fontScalePercent
 import com.github.gbandszxc.goodtvplorer.data.nextFontScale
 import com.github.gbandszxc.goodtvplorer.data.persistence.DisplaySettingsRepository
+import com.github.gbandszxc.goodtvplorer.domain.CacheRepository
+import com.github.gbandszxc.goodtvplorer.domain.Formatters
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
 import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvTheme
@@ -63,10 +65,11 @@ private val SettingsText = Color(0xFFF3F7FA)
 private val SettingsMutedText = Color(0xFFA8B8C7)
 private val SettingsFocusText = Color(0xFF151007)
 
-private enum class SettingsSection { Display, About }
+private enum class SettingsSection { Display, Cache, About }
 
 class SettingsActivity : ComponentActivity() {
     private val displaySettings by lazy { DisplaySettingsRepository(applicationContext) }
+    private val cache by lazy { CacheRepository(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,6 +82,8 @@ class SettingsActivity : ComponentActivity() {
                     SettingsScreen(
                         fontScale = fontScale,
                         onFontScale = { value -> lifecycleScope.launch { displaySettings.setFontScale(value) } },
+                        cacheSize = { cache.sizeBytes() },
+                        clearCache = { cache.clear() },
                         onClose = ::finish,
                     )
                 }
@@ -88,7 +93,7 @@ class SettingsActivity : ComponentActivity() {
 }
 
 @Composable
-private fun SettingsScreen(fontScale: Float, onFontScale: (Float) -> Unit, onClose: () -> Unit) {
+private fun SettingsScreen(fontScale: Float, onFontScale: (Float) -> Unit, cacheSize: suspend () -> Long, clearCache: suspend () -> Unit, onClose: () -> Unit) {
     var section by remember { mutableStateOf(SettingsSection.Display) }
     val context = LocalContext.current
     val githubUrl = "https://github.com/gbandszxc/good-tvplorer"
@@ -101,6 +106,7 @@ private fun SettingsScreen(fontScale: Float, onFontScale: (Float) -> Unit, onClo
             Text("设置", color = SettingsText, fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(18.dp))
             SettingsMenuItem("显示设置", selected = section == SettingsSection.Display) { section = SettingsSection.Display }
+            SettingsMenuItem("缓存设置", selected = section == SettingsSection.Cache) { section = SettingsSection.Cache }
             SettingsMenuItem("关于", selected = section == SettingsSection.About) { section = SettingsSection.About }
             Spacer(Modifier.weight(1f))
             SettingsMenuItem("返回", selected = false, onClick = onClose)
@@ -112,6 +118,7 @@ private fun SettingsScreen(fontScale: Float, onFontScale: (Float) -> Unit, onClo
         ) {
             when (section) {
                 SettingsSection.Display -> DisplaySettingsContent(fontScale, onFontScale)
+                SettingsSection.Cache -> CacheSettingsContent(cacheSize, clearCache)
                 SettingsSection.About -> AboutContent(
                     version = "v${BuildConfig.VERSION_NAME} / ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}",
                     onOpenGithub = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(githubUrl))) } },
@@ -119,6 +126,17 @@ private fun SettingsScreen(fontScale: Float, onFontScale: (Float) -> Unit, onClo
             }
         }
     }
+}
+
+@Composable
+private fun CacheSettingsContent(cacheSize: suspend () -> Long, clearCache: suspend () -> Unit) {
+    var size by remember { mutableStateOf<Long?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    androidx.compose.runtime.LaunchedEffect(Unit) { size = cacheSize() }
+    Text("缓存设置", color = SettingsIndicator, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+    Text("媒体缩略图和临时文件可随时清理，不影响已保存的 SMB 连接和显示设置。", color = SettingsMutedText, fontSize = 19.sp)
+    SettingsActionCard("当前缓存", size?.let(Formatters::size) ?: "正在统计…", onClick = {})
+    TvButton("清理缓存", enabled = size != null && size != 0L, onClick = { scope.launch { clearCache(); size = cacheSize() } })
 }
 
 @Composable

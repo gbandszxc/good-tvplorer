@@ -494,6 +494,9 @@ private fun PreviewPanel(item: FileItem?, thumbnail: File?, metadata: BrowserPre
         if (metadataMatchesItem && metadata.loading) {
             Spacer(Modifier.height(12.dp))
             Text("正在读取媒体信息…", color = Color(0xFF728397), fontSize = 16.sp)
+        } else if (metadataMatchesItem && metadata.textSnippet != null) {
+            Spacer(Modifier.height(12.dp))
+            Text(metadata.textSnippet, color = Color(0xFFC8D5E2), fontSize = 16.sp, maxLines = 5, overflow = TextOverflow.Ellipsis)
         } else if (metadataMatchesItem && metadata.metadata.entries.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             metadata.metadata.entries.forEach { entry ->
@@ -509,7 +512,7 @@ private fun PreviewPanel(item: FileItem?, thumbnail: File?, metadata: BrowserPre
 @Composable
 private fun MediaThumb(item: FileItem, thumbnail: File?, modifier: Modifier, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit) {
     DisposableEffect(item, thumbnail) {
-        val requested = item.kind == FileKind.Image && thumbnail == null
+        val requested = item.kind in setOf(FileKind.Image, FileKind.Audio, FileKind.Video) && thumbnail == null
         if (requested) onThumbnailVisible(item)
         onDispose { if (requested) onThumbnailHidden(item) }
     }
@@ -517,6 +520,10 @@ private fun MediaThumb(item: FileItem, thumbnail: File?, modifier: Modifier, onT
     Box(modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
         if (model != null) {
             AsyncImage(model = model, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else if (item.kind == FileKind.Text) {
+            Icon(painterResource(R.drawable.ic_text), contentDescription = "文本文件", tint = Color(0xFFC9D8E5), modifier = Modifier.size(36.dp))
+        } else if (item.kind == FileKind.Audio) {
+            Icon(painterResource(R.drawable.ic_disc), contentDescription = "音频文件", tint = Color(0xFFC9D8E5), modifier = Modifier.size(38.dp))
         } else {
             Text(icon(item.kind), color = Color(0xFFC9D8E5), fontSize = 30.sp, fontWeight = FontWeight.Bold)
         }
