@@ -65,6 +65,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
 import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
@@ -93,6 +96,16 @@ fun ImageViewer(
     var loaded by remember(state.image) { mutableStateOf(false) }
     var loadError by remember(state.image) { mutableStateOf<String?>(null) }
     var controlsVisible by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val imageRequest = remember(state.image) {
+        state.image?.let {
+            ImageRequest.Builder(context)
+                .data(it)
+                .memoryCachePolicy(CachePolicy.DISABLED)
+                .allowHardware(false)
+                .build()
+        }
+    }
     val viewerFocusRequester = remember { FocusRequester() }
     val selectedFilmFocusRequester = remember(selectedPath) { FocusRequester() }
     val filmstripState = rememberLazyListState()
@@ -140,7 +153,7 @@ fun ImageViewer(
                 }
                 Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp, modifier = Modifier.align(Alignment.Center))
             }
-            state.image != null -> {
+            imageRequest != null -> {
                 if (!loaded && state.placeholder != null) {
                     AsyncImage(model = state.placeholder, contentDescription = name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 }
@@ -148,7 +161,7 @@ fun ImageViewer(
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
                 AsyncImage(
-                    model = state.image,
+                    model = imageRequest,
                     contentDescription = name,
                     modifier = Modifier.fillMaxSize().alpha(if (loaded) 1f else 0f),
                     contentScale = ContentScale.Fit,
