@@ -310,7 +310,6 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
             return SmbResources(
                 nextClient,
                 nextConnection,
-                nextSession,
                 nextShare,
             ).also { connected = true }
         } catch (e: Exception) {
@@ -373,6 +372,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
             if (closed) return
             closed = true
             runCatching { opened.file.close() }
+            resources.invalidate(opened.generation)
             logPerformance("stream", started, opened.generation, path, bytes = totalBytes, count = 1)
         }
     }
@@ -408,7 +408,6 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
     private data class SmbResources(
         val client: SMBClient,
         val connection: Connection,
-        val session: Session,
         val share: DiskShare,
     ) {
         val readBufferSize = smbReadBufferSize(connection.negotiatedProtocol.maxReadSize)
@@ -416,10 +415,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         fun isUsable() = share.isConnected && connection.isConnected
 
         fun close() {
-            if (!connection.isConnected) return
-            runCatching { share.close() }
-            runCatching { session.close() }
-            runCatching { connection.close() }
+            runCatching { connection.close(true) }
             runCatching { client.close() }
         }
     }

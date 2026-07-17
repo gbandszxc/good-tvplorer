@@ -78,10 +78,9 @@ interface FileSource {
 
 ### 连接复用与生命周期
 
-`SmbFileSource` 内部维护一个 `ReusableResource<SmbResources>` 池，每个 SMB 连接包含 client、connection、session、share 四层对象：
+`SmbFileSource` 内部维护一个 `ReusableResource<SmbResources>` 池，每个 SMB 连接持有 client、connection、share：
 
-- **空闲检测**：`IdleResourceVerifier` 记录最后活跃时间，超过 5 秒未使用则视为不可用，下次操作自动重建连接。
-- **引用计数**：文件流持有连接 lease，流关闭时释放，避免使用中连接被回收。
+- **连接复用**：目录与范围读取复用同一连接；图片原图流关闭或取消时强制断开并淘汰其 transport，下一张使用新连接，避免复用被取消读取污染的会话，也避免失效 share 优雅关闭时等待网络超时。
 - **自动重试**：对 `IOException`、`TransportException`、非 API 的 `SMBRuntimeException` 执行一次重连重试。
 
 ### 读取优化
