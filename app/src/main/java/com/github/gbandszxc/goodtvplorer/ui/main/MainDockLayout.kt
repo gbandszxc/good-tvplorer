@@ -4,6 +4,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -109,7 +111,7 @@ private fun SourceTab(label: String, selected: Boolean, onClick: () -> Unit) {
 
     Box(
         Modifier
-            .height(36.dp)
+            .height(48.dp)
             .shadow(if (selected && !focused) 8.dp else 0.dp, shape)
             .clip(shape)
             .background(background)
@@ -181,7 +183,7 @@ private fun NetworkHub(connections: List<SmbConnectionInfo>, onOpenSmb: (String)
             }
         }
     } else {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("网络位置", color = Color(0xFF7CC7D8), fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
             connections.forEach { connection ->
                 TvButton("${connection.name}   ${connection.host}/${connection.share}", modifier = Modifier.fillMaxWidth()) { onOpenSmb(connection.id) }

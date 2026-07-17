@@ -13,6 +13,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -113,7 +115,7 @@ private fun SettingsScreen(fontScale: Float, onFontScale: (Float) -> Unit, cache
         }
         Spacer(Modifier.width(1.dp).fillMaxHeight().background(SettingsDivider))
         Column(
-            Modifier.weight(1f).fillMaxHeight().padding(horizontal = 38.dp, vertical = 38.dp),
+            Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(horizontal = 38.dp, vertical = 38.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             when (section) {

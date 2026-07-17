@@ -114,18 +114,30 @@ class MainActivity : ComponentActivity() {
                             name = screen.name,
                             selectedPath = screen.path,
                             state = state.preview,
-                            images = state.imageViewerItems,
+                            images = state.previewItems,
                             thumbnails = state.thumbnails,
-                            onPrevious = { viewModel.moveViewerImage(-1) },
-                            onNext = { viewModel.moveViewerImage(1) },
-                            onSelect = viewModel::selectViewerImage,
+                            onPrevious = { viewModel.movePreviewItem(-1) },
+                            onNext = { viewModel.movePreviewItem(1) },
+                            onSelect = viewModel::selectPreviewItem,
                             onThumbnailVisible = viewModel::requestThumbnail,
                             onThumbnailHidden = viewModel::releaseThumbnail,
                             onBack = viewModel::goBack,
                         )
                         is Screen.TextPreview -> TextPreview(screen.name, state.preview, viewModel::goBack)
-                        is Screen.AudioPreview -> AudioPreview(screen.name, state.preview, viewModel::goBack)
-                        is Screen.VideoPreview -> VideoPreview(screen.name, state.preview, viewModel::goBack)
+                        is Screen.AudioPreview -> AudioPreview(
+                            name = screen.name,
+                            state = state.preview,
+                            onPrevious = { viewModel.movePreviewItem(-1) },
+                            onNext = { viewModel.movePreviewItem(1) },
+                            onBack = viewModel::goBack,
+                        )
+                        is Screen.VideoPreview -> VideoPreview(
+                            name = screen.name,
+                            state = state.preview,
+                            onPrevious = { viewModel.movePreviewItem(-1) },
+                            onNext = { viewModel.movePreviewItem(1) },
+                            onBack = viewModel::goBack,
+                        )
                     }
                 }
             }

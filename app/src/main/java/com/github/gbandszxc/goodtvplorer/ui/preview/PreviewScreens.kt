@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -49,8 +51,10 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -81,6 +85,35 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToLong
+
+internal fun swipeStep(distance: Float, threshold: Float): Int = when {
+    distance > threshold -> -1
+    distance < -threshold -> 1
+    else -> 0
+}
+
+internal fun seekPosition(duration: Long, x: Float, width: Int): Long =
+    if (duration <= 0 || width <= 0) 0 else (duration * (x / width).coerceIn(0f, 1f)).roundToLong()
+
+private fun Modifier.horizontalSwipe(onPrevious: () -> Unit, onNext: () -> Unit): Modifier = pointerInput(Unit) {
+    var distance = 0f
+    val threshold = 72.dp.toPx()
+    detectHorizontalDragGestures(
+        onDragStart = { distance = 0f },
+        onDragCancel = { distance = 0f },
+        onDragEnd = {
+            when (swipeStep(distance, threshold)) {
+                -1 -> onPrevious()
+                1 -> onNext()
+            }
+            distance = 0f
+        },
+    ) { change, dragAmount ->
+        change.consume()
+        distance += dragAmount
+    }
+}
 
 @Composable
 fun ImageViewer(
@@ -200,6 +233,18 @@ fun ImageViewer(
                 }
             }
         }
+        Box(
+            Modifier.matchParentSize()
+                .horizontalSwipe(onPrevious, onNext)
+                .pointerInput(Unit) { detectTapGestures { controlsVisible = !controlsVisible } }
+                .semantics {
+                    contentDescription = "图片预览，点击显示控制栏，左右滑动切换图片"
+                    onClick {
+                        controlsVisible = !controlsVisible
+                        true
+                    }
+                },
+        )
         if (controlsVisible) {
             Column(Modifier.fillMaxSize()) {
                 Row(
@@ -282,7 +327,11 @@ fun TextPreview(name: String, state: PreviewState, onBack: () -> Unit) {
                             Key.PageDown, Key.DirectionRight -> { page = (page + 1).coerceAtMost(pages.lastIndex); true }
                             else -> false
                         }
-                    },
+                    }
+                    .horizontalSwipe(
+                        onPrevious = { page = (page - 1).coerceAtLeast(0) },
+                        onNext = { page = (page + 1).coerceAtMost(pages.lastIndex) },
+                    ),
             ) {
                 if (state.truncated) Text("仅显示前 1MB", color = Color(0xFFFFC857), fontSize = 18.sp)
                 Column(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
@@ -311,7 +360,13 @@ internal fun textPages(text: String, linesPerPage: Int = 14): List<List<Numbered
         .chunked(linesPerPage).ifEmpty { listOf(listOf(NumberedLine(1, ""))) }
 
 @Composable
-fun AudioPreview(name: String, state: PreviewState, onBack: () -> Unit) {
+fun AudioPreview(
+    name: String,
+    state: PreviewState,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onBack: () -> Unit,
+) {
     Column(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(horizontal = 36.dp, vertical = 24.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -320,13 +375,19 @@ fun AudioPreview(name: String, state: PreviewState, onBack: () -> Unit) {
         when {
             state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp) }
-            state.media != null -> AudioPlayer(state.media, state.timedText, Modifier.weight(1f))
+            state.media != null -> AudioPlayer(state.media, state.timedText, onPrevious, onNext, Modifier.weight(1f))
         }
     }
 }
 
 @Composable
-private fun AudioPlayer(media: StreamingMedia, lyrics: List<TimedTextCue>, modifier: Modifier = Modifier) {
+private fun AudioPlayer(
+    media: StreamingMedia,
+    lyrics: List<TimedTextCue>,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val player = remember(media) {
         ExoPlayer.Builder(context)
@@ -353,17 +414,20 @@ private fun AudioPlayer(media: StreamingMedia, lyrics: List<TimedTextCue>, modif
     }
     val lyric = lyrics.lastOrNull { position >= it.startMs }?.takeIf { position < it.endMs }
     Column(modifier.fillMaxWidth()) {
-    Row(Modifier.padding(top = 18.dp).weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-        Box(Modifier.weight(0.38f).fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0xFF101A26)), contentAlignment = Alignment.Center) {
-            if (artwork != null) AsyncImage(model = artwork, contentDescription = "音频封面", modifier = Modifier.fillMaxSize().padding(12.dp), contentScale = ContentScale.Fit)
-            else Text("AUD", color = Color(0xFF7CC7D8), fontSize = 40.sp)
+        Row(
+            Modifier.padding(top = 18.dp).weight(1f).fillMaxWidth().horizontalSwipe(onPrevious, onNext),
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+        ) {
+            Box(Modifier.weight(0.38f).fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0xFF101A26)), contentAlignment = Alignment.Center) {
+                if (artwork != null) AsyncImage(model = artwork, contentDescription = "音频封面", modifier = Modifier.fillMaxSize().padding(12.dp), contentScale = ContentScale.Fit)
+                else Text("AUD", color = Color(0xFF7CC7D8), fontSize = 40.sp)
+            }
+            Box(Modifier.weight(0.62f).fillMaxSize().background(Color(0xFF101A26)).padding(24.dp), contentAlignment = Alignment.Center) {
+                Text(lyric?.text ?: if (lyrics.isEmpty()) "未找到同名 LRC 歌词" else "♪", color = if (lyric == null) Color(0xFFA8B8C7) else Color(0xFFF3F7FA), fontSize = 28.sp, lineHeight = 40.sp)
+            }
         }
-        Box(Modifier.weight(0.62f).fillMaxSize().background(Color(0xFF101A26)).padding(24.dp), contentAlignment = Alignment.Center) {
-            Text(lyric?.text ?: if (lyrics.isEmpty()) "未找到同名 LRC 歌词" else "♪", color = if (lyric == null) Color(0xFFA8B8C7) else Color(0xFFF3F7FA), fontSize = 28.sp, lineHeight = 40.sp)
-        }
-    }
-    error?.let { Text(it, color = Color(0xFFFFA3A3), fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)) }
-    MediaControls(player, playing, position, duration, modifier = Modifier.focusRequester(controlFocus))
+        error?.let { Text(it, color = Color(0xFFFFA3A3), fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)) }
+        MediaControls(player, playing, position, duration, modifier = Modifier.focusRequester(controlFocus))
     }
 }
 
@@ -373,7 +437,18 @@ private fun SeekProgress(position: Long, duration: Long, onSeek: (Long) -> Unit,
     Box(
         modifier.height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (focused) Color(0xFF152232) else Color(0xFF101A26))
             .border(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color(0xFF26384B), RoundedCornerShape(8.dp))
-            .onFocusChanged { focused = it.isFocused }.focusable().semantics { contentDescription = "播放进度，左右键快进或后退" }
+            .onFocusChanged { focused = it.isFocused }.focusable().semantics { contentDescription = "播放进度，左右键或触屏拖动调整" }
+            .pointerInput(duration) {
+                detectTapGestures { onSeek(seekPosition(duration, it.x, size.width)) }
+            }
+            .pointerInput(duration) {
+                detectHorizontalDragGestures(
+                    onDragStart = { onSeek(seekPosition(duration, it.x, size.width)) },
+                ) { change, _ ->
+                    change.consume()
+                    onSeek(seekPosition(duration, change.position.x, size.width))
+                }
+            }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) false else when (event.key) {
                     Key.DirectionLeft -> { onSeek((position - 10_000).coerceAtLeast(0)); true }
@@ -388,10 +463,16 @@ private fun SeekProgress(position: Long, duration: Long, onSeek: (Long) -> Unit,
 }
 
 @Composable
-fun VideoPreview(name: String, state: PreviewState, onBack: () -> Unit) = when {
+fun VideoPreview(
+    name: String,
+    state: PreviewState,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onBack: () -> Unit,
+) = when {
     state.loading -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     state.error != null -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFFA3A3), fontSize = 26.sp) }
-    state.media != null -> VideoPlayer(name, state.media, state.timedText, onBack)
+    state.media != null -> VideoPlayer(name, state.media, state.timedText, onPrevious, onNext, onBack)
     else -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { Text("没有可用的视频", color = Color(0xFFA8B8C7), fontSize = 26.sp) }
 }
 
@@ -415,7 +496,14 @@ internal fun effectiveVideoScaleMode(mode: VideoScaleMode, size: VideoSize): Vid
     if (mode == VideoScaleMode.Original && (size.width <= 0 || size.height <= 0)) VideoScaleMode.Fit else mode
 
 @Composable
-private fun VideoPlayer(name: String, media: StreamingMedia, subtitles: List<TimedTextCue>, onBack: () -> Unit) {
+private fun VideoPlayer(
+    name: String,
+    media: StreamingMedia,
+    subtitles: List<TimedTextCue>,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    onBack: () -> Unit,
+) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val player = remember(media) {
@@ -473,6 +561,18 @@ private fun VideoPlayer(name: String, media: StreamingMedia, subtitles: List<Tim
             },
     ) {
         VideoSurface(player, effectiveScaleMode, videoSize, density.density)
+        Box(
+            Modifier.matchParentSize()
+                .horizontalSwipe(onPrevious, onNext)
+                .pointerInput(Unit) { detectTapGestures { controlsVisible = !controlsVisible } }
+                .semantics {
+                    contentDescription = "视频预览，点击显示控制栏，左右滑动切换视频"
+                    onClick {
+                        controlsVisible = !controlsVisible
+                        true
+                    }
+                },
+        )
         subtitle?.let {
             Text(
                 it,

@@ -100,7 +100,7 @@ data class MainUiState(
     val browser: BrowserState = BrowserState(loading = true),
     val focusAnchorPath: String? = null,
     val preview: PreviewState = PreviewState(),
-    val imageViewerItems: List<FileItem> = emptyList(),
+    val previewItems: List<FileItem> = emptyList(),
     val thumbnails: Map<String, File> = emptyMap(),
     val browserViewMode: BrowserViewMode = BrowserViewMode.Grid,
     val browserSort: BrowserSort = BrowserSort(),
@@ -138,8 +138,8 @@ internal fun filterAndSortBrowserItems(
         .toList()
 }
 
-internal fun imageViewerItems(items: List<FileItem>, sort: BrowserSort, selected: FileItem): List<FileItem> =
-    filterAndSortBrowserItems(items, "", sort).filter { it.kind == FileKind.Image }.let {
+internal fun previewItems(items: List<FileItem>, sort: BrowserSort, selected: FileItem): List<FileItem> =
+    filterAndSortBrowserItems(items, "", sort).filter { it.kind == selected.kind }.let {
         if (it.any { item -> item.handle == selected.handle }) it else listOf(selected)
     }
 
@@ -197,7 +197,7 @@ internal fun navigateBack(
             state.copy(
                 screen = Screen.Browser(screen.sourceKey, screen.path.substringBeforeLast('/', "")),
                 preview = PreviewState(),
-                imageViewerItems = emptyList(),
+                previewItems = emptyList(),
             ),
         )
         is Screen.TextPreview, is Screen.AudioPreview, is Screen.VideoPreview -> {
@@ -492,10 +492,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 openBrowser(item.handle.sourceKey, item.handle.path)
             }
-            FileKind.Image -> prepareImage(item, imageViewerItems(_state.value.browser.items, _state.value.browserSort, item))
+            FileKind.Image -> prepareImage(item, previewItems(_state.value.browser.items, _state.value.browserSort, item))
             FileKind.Text -> prepareText(item.handle, item.name)
-            FileKind.Audio -> prepareMedia(item, isAudio = true)
-            FileKind.Video -> prepareMedia(item, isAudio = false)
+            FileKind.Audio -> prepareMedia(item, isAudio = true, items = previewItems(_state.value.browser.items, _state.value.browserSort, item))
+            FileKind.Video -> prepareMedia(item, isAudio = false, items = previewItems(_state.value.browser.items, _state.value.browserSort, item))
             FileKind.Other -> showError("暂不支持打开此文件类型")
         }
     }
@@ -520,15 +520,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         thumbnailRequests.release(thumbKey(item))
     }
 
-    fun selectViewerImage(item: FileItem) {
-        if (item in _state.value.imageViewerItems) prepareImage(item, _state.value.imageViewerItems)
+    fun selectPreviewItem(item: FileItem) {
+        val items = _state.value.previewItems
+        if (item !in items) return
+        when (item.kind) {
+            FileKind.Image -> prepareImage(item, items)
+            FileKind.Audio -> prepareMedia(item, isAudio = true, items = items)
+            FileKind.Video -> prepareMedia(item, isAudio = false, items = items)
+            else -> Unit
+        }
     }
 
-    fun moveViewerImage(offset: Int) {
-        val items = _state.value.imageViewerItems
-        val screen = _state.value.screen as? Screen.ImageViewer ?: return
-        val index = items.indexOfFirst { it.handle.path == screen.path }
-        items.getOrNull(index + offset)?.let { prepareImage(it, items) }
+    fun movePreviewItem(offset: Int) {
+        val state = _state.value
+        val path = when (val screen = state.screen) {
+            is Screen.ImageViewer -> screen.path
+            is Screen.AudioPreview -> screen.path
+            is Screen.VideoPreview -> screen.path
+            else -> return
+        }
+        val index = state.previewItems.indexOfFirst { it.handle.path == path }
+        state.previewItems.getOrNull(index + offset)?.let(::selectPreviewItem)
     }
 
     fun goBack() = navigateBack(_state.value, ::openNetworkHub, ::openLocal, { sourceKey, path ->
@@ -544,7 +556,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    private fun prepareImage(item: FileItem, viewerItems: List<FileItem>) {
+    private fun prepareImage(item: FileItem, items: List<FileItem>) {
         val source = sources[item.handle.sourceKey] ?: return showError("文件源不存在")
         val screen = Screen.ImageViewer(item.handle.sourceKey, item.handle.path, item.name)
         previewJob?.cancel()
@@ -560,7 +572,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(
                 screen = screen,
-                imageViewerItems = viewerItems,
+                previewItems = items,
                 preview = PreviewState(
                     loading = true,
                     placeholder = it.thumbnails[thumbKey(item)],
@@ -603,12 +615,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun prepareMedia(item: FileItem, isAudio: Boolean) {
+    private fun prepareMedia(item: FileItem, isAudio: Boolean, items: List<FileItem>) {
         val source = sources[item.handle.sourceKey] ?: return showError("文件源不存在")
         val screen: Screen = if (isAudio) Screen.AudioPreview(item.handle.sourceKey, item.handle.path, item.name)
             else Screen.VideoPreview(item.handle.sourceKey, item.handle.path, item.name)
         previewJob?.cancel()
-        _state.update { it.copy(screen = screen, preview = PreviewState(loading = true)) }
+        _state.update { it.copy(screen = screen, previewItems = items, preview = PreviewState(loading = true)) }
         previewJob = viewModelScope.launch {
             try {
                 val extension = if (isAudio) "lrc" else "srt"

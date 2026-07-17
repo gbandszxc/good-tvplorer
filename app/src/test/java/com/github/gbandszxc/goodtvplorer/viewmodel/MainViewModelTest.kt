@@ -114,16 +114,18 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `image viewer follows the current directory sort and excludes non-images`() {
+    fun `preview switching follows the current directory sort and media type`() {
         val later = fileItem("z.jpg", FileKind.Image, size = 1L, modifiedAtMillis = 1L)
         val selected = fileItem("a.png", FileKind.Image, size = 1L, modifiedAtMillis = 1L)
+        val audio = fileItem("song.flac", FileKind.Audio, size = 1L, modifiedAtMillis = 1L)
         val text = fileItem("notes.txt", FileKind.Text, size = 1L, modifiedAtMillis = 1L)
 
         assertEquals(
             listOf(selected, later),
-            imageViewerItems(listOf(later, text, selected), BrowserSort(), selected),
+            previewItems(listOf(later, text, selected), BrowserSort(), selected),
         )
-        assertEquals(listOf(selected), imageViewerItems(listOf(later), BrowserSort(), selected))
+        assertEquals(listOf(audio), previewItems(listOf(later, audio, selected), BrowserSort(), audio))
+        assertEquals(listOf(selected), previewItems(listOf(later), BrowserSort(), selected))
     }
 
     @Test

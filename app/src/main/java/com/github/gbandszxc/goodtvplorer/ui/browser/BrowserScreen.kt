@@ -205,7 +205,7 @@ private fun BrowserToolbar(
     }
 
     Row(
-        Modifier.fillMaxWidth().height(40.dp),
+        Modifier.fillMaxWidth().height(48.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -325,7 +325,7 @@ private fun ToolbarIconButton(iconRes: Int, description: String, onClick: () -> 
     val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color(0xFF101A26), label = "$description-background")
     val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "$description-tint")
     Box(
-        Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(background)
+        Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(background)
             .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent), RoundedCornerShape(10.dp))
             .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
             .semantics { contentDescription = description },
@@ -366,7 +366,7 @@ private fun PathEditButton(onClick: () -> Unit) {
     val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color.Transparent, label = "path-edit-background")
     val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "path-edit-tint")
     Box(
-        Modifier.size(34.dp).clip(RoundedCornerShape(6.dp)).background(background)
+        Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(background)
             .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent), RoundedCornerShape(6.dp))
             .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
             .semantics { contentDescription = "编辑路径" },

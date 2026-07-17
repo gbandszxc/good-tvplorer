@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.animateColorAsState
@@ -18,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
@@ -51,11 +53,13 @@ fun TvButton(
     val border by animateDpAsState(if (isFocused) 3.dp else 1.dp, label = "button-border")
     Box(
         modifier = modifier
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
             .border(BorderStroke(border, if (isFocused) Color(0xFFFFE3A1) else Color(0xFF26384B)), RoundedCornerShape(8.dp))
             .then(if (enabled) Modifier.onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick) else Modifier)
-            .padding(contentPadding)
+            .padding(contentPadding),
+        contentAlignment = Alignment.CenterStart,
     ) {
         Text(text, color = fg, fontSize = fontSize, fontWeight = FontWeight.SemiBold)
     }
