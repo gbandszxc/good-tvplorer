@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -77,6 +78,8 @@ import com.github.gbandszxc.goodtvplorer.domain.TimedTextCue
 import com.github.gbandszxc.goodtvplorer.viewmodel.MainViewModel
 import com.github.gbandszxc.goodtvplorer.viewmodel.PreviewState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 import java.util.concurrent.TimeUnit
 
 @Composable
@@ -113,6 +116,27 @@ fun ImageViewer(
     LaunchedEffect(Unit) { viewerFocusRequester.requestFocus() }
     LaunchedEffect(controlsVisible, selectedFilmIndex) {
         if (controlsVisible && selectedFilmIndex >= 0) filmstripState.scrollToItem(selectedFilmIndex)
+    }
+    LaunchedEffect(controlsVisible, filmstripState, images) {
+        if (!controlsVisible) return@LaunchedEffect
+        val heldItems = mutableMapOf<String, FileItem>()
+        try {
+            snapshotFlow { filmstripState.layoutInfo.visibleItemsInfo.map { it.index }.toSet() }
+                .distinctUntilChanged()
+                .collect { visibleIndices ->
+                    val visibleItems = visibleIndices.mapNotNull(images::getOrNull)
+                    val visibleKeys = visibleItems.mapTo(mutableSetOf()) { MainViewModel.thumbKey(it) }
+                    (heldItems.keys - visibleKeys).forEach { key ->
+                        heldItems.remove(key)?.let(onThumbnailHidden)
+                    }
+                    visibleItems.forEach { item ->
+                        val key = MainViewModel.thumbKey(item)
+                        if (heldItems.putIfAbsent(key, item) == null) onThumbnailVisible(item)
+                    }
+                }
+        } finally {
+            heldItems.values.forEach(onThumbnailHidden)
+        }
     }
     BackHandler(enabled = controlsVisible) { controlsVisible = false }
     Box(
@@ -198,8 +222,6 @@ fun ImageViewer(
                             selected = item.handle.path == selectedPath,
                             focusRequester = if (item.handle.path == selectedPath) selectedFilmFocusRequester else null,
                             onSelect = { onSelect(item) },
-                            onThumbnailVisible = onThumbnailVisible,
-                            onThumbnailHidden = onThumbnailHidden,
                         )
                     }
                 }
@@ -215,15 +237,8 @@ private fun ImageFilmstripItem(
     selected: Boolean,
     focusRequester: FocusRequester?,
     onSelect: () -> Unit,
-    onThumbnailVisible: (FileItem) -> Unit,
-    onThumbnailHidden: (FileItem) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    DisposableEffect(item, thumbnail) {
-        val requested = thumbnail == null
-        if (requested) onThumbnailVisible(item)
-        onDispose { if (requested) onThumbnailHidden(item) }
-    }
     LaunchedEffect(focusRequester) { focusRequester?.requestFocus() }
     Box(
         Modifier.width(144.dp).fillMaxSize().clip(RoundedCornerShape(8.dp))
