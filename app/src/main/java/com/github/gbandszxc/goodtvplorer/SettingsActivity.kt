@@ -100,7 +100,7 @@ private fun SettingsScreen(fontScale: Float, onFontScale: (Float) -> Unit, cache
 
     Row(Modifier.fillMaxSize().background(Color(0xFF0B121A))) {
         Column(
-            Modifier.width(260.dp).fillMaxHeight().background(SettingsSidebar).padding(horizontal = 28.dp, vertical = 34.dp),
+            Modifier.width((260 * fontScale).dp).fillMaxHeight().background(SettingsSidebar).padding(horizontal = 28.dp, vertical = 34.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("设置", color = SettingsText, fontSize = 32.sp, fontWeight = FontWeight.Bold)
