@@ -88,6 +88,7 @@ class MainViewModelTest {
 
         val held = prepareImageThumbnailWork(
             key = "selected",
+            cancelOtherRequests = true,
             requestThumbnailWork = { events += "request"; true },
             cancelAllExcept = { events += "cancel:$it" },
             clearBatch = { events += "clear" },
@@ -95,6 +96,21 @@ class MainViewModelTest {
 
         assertEquals(true, held)
         assertEquals(listOf("request", "cancel:selected", "clear"), events)
+    }
+
+    @Test
+    fun `image viewer switching keeps visible filmstrip thumbnail work`() {
+        val events = mutableListOf<String>()
+
+        prepareImageThumbnailWork(
+            key = "selected",
+            cancelOtherRequests = false,
+            requestThumbnailWork = { events += "request"; true },
+            cancelAllExcept = { events += "cancel:$it" },
+            clearBatch = { events += "clear" },
+        )
+
+        assertEquals(listOf("request"), events)
     }
 
     @Test

@@ -220,13 +220,16 @@ internal fun navigateBack(
 
 internal fun prepareImageThumbnailWork(
     key: String,
+    cancelOtherRequests: Boolean,
     requestThumbnailWork: () -> Boolean,
     cancelAllExcept: (String) -> Unit,
     clearBatch: () -> Unit,
 ): Boolean {
     val held = requestThumbnailWork()
-    cancelAllExcept(key)
-    clearBatch()
+    if (cancelOtherRequests) {
+        cancelAllExcept(key)
+        clearBatch()
+    }
     return held
 }
 
@@ -549,6 +552,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val key = thumbKey(item)
         val holdsThumbnail = prepareImageThumbnailWork(
             key = key,
+            cancelOtherRequests = _state.value.screen !is Screen.ImageViewer,
             requestThumbnailWork = { requestThumbnailWork(item) },
             cancelAllExcept = thumbnailRequests::cancelAllExcept,
             clearBatch = ::clearThumbnailBatch,
