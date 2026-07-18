@@ -226,9 +226,9 @@ class MainDockLayoutTest {
         val toolbar = composeRule.onNodeWithTag("browser-toolbar").getUnclippedBoundsInRoot()
         val content = composeRule.onNodeWithTag("browser-content").getUnclippedBoundsInRoot()
 
-        assertEquals(spacing, (dock.left - root.left).value, 0.5f)
-        assertEquals(spacing, (dock.top - root.top).value, 0.5f)
-        assertEquals(spacing, (root.bottom - dock.bottom).value, 0.5f)
+        assertEquals(0f, (dock.left - root.left).value, 0.5f)
+        assertEquals(0f, (dock.top - root.top).value, 0.5f)
+        assertEquals(0f, (root.bottom - dock.bottom).value, 0.5f)
         assertEquals(spacing, (source.left - dock.right).value, 0.5f)
         assertEquals(spacing, (source.top - root.top).value, 0.5f)
         assertEquals(spacing, (root.right - source.right).value, 0.5f)

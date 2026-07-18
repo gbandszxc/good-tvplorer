@@ -153,8 +153,7 @@ internal fun MainDockLayout(
         if (showNetworkHub) navigation.contentAvailable = true
     }
     Row(
-        Modifier.fillMaxSize().testTag("main-layout").background(Color(0xFF0B121A)).padding(layoutSpacing),
-        horizontalArrangement = Arrangement.spacedBy(layoutSpacing),
+        Modifier.fillMaxSize().testTag("main-layout").background(Color(0xFF0B121A)),
     ) {
         SideDock(
             onConnections,
@@ -167,8 +166,9 @@ internal fun MainDockLayout(
             showNetworkHub,
             layoutScale,
         )
+        Spacer(Modifier.width(layoutSpacing))
         Column(
-            Modifier.weight(1f).fillMaxHeight(),
+            Modifier.weight(1f).fillMaxHeight().padding(top = layoutSpacing, end = layoutSpacing, bottom = layoutSpacing),
             verticalArrangement = Arrangement.spacedBy(layoutSpacing),
         ) {
             TopDock(networkSelected, showNetworkHub, layoutScale, navigation, onLocal, onNetwork)
