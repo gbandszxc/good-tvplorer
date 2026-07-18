@@ -1,20 +1,18 @@
 package com.github.gbandszxc.goodtvplorer.ui.main
 
+import android.view.KeyEvent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.pressKey
+import androidx.test.platform.app.InstrumentationRegistry
 import com.github.gbandszxc.goodtvplorer.data.FileHandle
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.data.FileKind
@@ -112,7 +110,7 @@ class MainDockLayoutTest {
         composeRule.onNodeWithContentDescription(before)
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
             .assertIsFocused()
-        composeRule.onRoot().performKeyInput { pressKey(Key.Enter) }
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
         composeRule.onNodeWithContentDescription(after).assertIsFocused()
     }
 }

@@ -3,6 +3,7 @@ package com.github.gbandszxc.goodtvplorer.ui.main
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -30,8 +31,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -169,15 +177,38 @@ private fun SideDock(
 @Composable
 private fun DockIconButton(icon: Int, label: String, onClick: () -> Unit, onFocusChange: (Boolean) -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
     val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color.Transparent, label = "dock-background")
     val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "dock-tint")
     Box(
         Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(background)
             .border(if (focused) 2.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent, RoundedCornerShape(12.dp))
+            .focusRequester(focusRequester)
             .onFocusChanged {
-                focused = it.isFocused
-                onFocusChange(it.isFocused)
-            }.focusable().tvOkClick(onClick)
+                if (it.isFocused || !confirming) {
+                    focused = it.isFocused
+                    onFocusChange(it.isFocused)
+                }
+            }
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                val isOk = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
+                when {
+                    event.type == KeyEventType.KeyDown && isOk -> {
+                        confirming = true
+                        true
+                    }
+                    event.type == KeyEventType.KeyUp && isOk -> {
+                        onClick()
+                        focusRequester.requestFocus()
+                        confirming = false
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .clickable(onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
