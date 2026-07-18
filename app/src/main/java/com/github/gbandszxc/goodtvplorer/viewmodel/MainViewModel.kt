@@ -342,6 +342,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { openBrowser(screen.sourceKey, screen.path, forceRefresh = true) }
     }
 
+    fun onMediaPermissionsChanged() {
+        browserCache.clear()
+        val screen = (_state.value.screen as? Screen.Browser)?.takeIf { it.sourceKey == local.key } ?: return
+        viewModelScope.launch { openBrowser(screen.sourceKey, screen.path, forceRefresh = true) }
+    }
+
     fun toggleBrowserViewMode() {
         _state.update {
             it.copy(browserViewMode = if (it.browserViewMode == BrowserViewMode.Grid) BrowserViewMode.List else BrowserViewMode.Grid)

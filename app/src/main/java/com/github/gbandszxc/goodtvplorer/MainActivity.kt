@@ -1,15 +1,17 @@
 package com.github.gbandszxc.goodtvplorer
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -36,6 +38,11 @@ import com.github.gbandszxc.goodtvplorer.viewmodel.Screen
 
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<MainViewModel>()
+    private var lastGrantedMediaPermissions: Set<String>? = null
+    private val mediaPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        lastGrantedMediaPermissions = grantedMediaPermissions()
+        viewModel.onMediaPermissionsChanged()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,15 +54,6 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             TvTheme {
-                val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
-                LaunchedEffect(Unit) {
-                    val permissions = if (Build.VERSION.SDK_INT >= 33) {
-                        arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_AUDIO)
-                    } else {
-                        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-                    }
-                    launcher.launch(permissions)
-                }
                 val state by viewModel.state.collectAsState()
                 val immersivePreviewVisible = state.screen is Screen.ImageViewer || state.screen is Screen.VideoPreview
                 LaunchedEffect(immersivePreviewVisible) {
@@ -142,5 +140,52 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        if (savedInstanceState == null) requestMissingMediaPermissions()
     }
+
+    override fun onResume() {
+        super.onResume()
+        val granted = grantedMediaPermissions()
+        if (lastGrantedMediaPermissions?.let { it != granted } == true) viewModel.onMediaPermissionsChanged()
+        lastGrantedMediaPermissions = granted
+    }
+
+    private fun requestMissingMediaPermissions() {
+        val granted = grantedMediaPermissions()
+        lastGrantedMediaPermissions = granted
+        missingMediaPermissions(Build.VERSION.SDK_INT, granted).takeIf(Array<String>::isNotEmpty)?.let(mediaPermissionsLauncher::launch)
+    }
+
+    private fun grantedMediaPermissions(): Set<String> = mediaPermissions(Build.VERSION.SDK_INT)
+        .filterTo(mutableSetOf()) { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
 }
+
+@SuppressLint("InlinedApi")
+internal fun mediaPermissions(sdkInt: Int): Array<String> = when {
+    sdkInt >= 34 -> arrayOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        Manifest.permission.READ_MEDIA_AUDIO,
+    )
+    sdkInt >= 33 -> arrayOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
+        Manifest.permission.READ_MEDIA_AUDIO,
+    )
+    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+}
+
+@SuppressLint("InlinedApi")
+internal fun missingMediaPermissions(sdkInt: Int, granted: Set<String>): Array<String> = buildList {
+    if (sdkInt >= 34) {
+        if (Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED !in granted) {
+            if (Manifest.permission.READ_MEDIA_IMAGES !in granted) add(Manifest.permission.READ_MEDIA_IMAGES)
+            if (Manifest.permission.READ_MEDIA_VIDEO !in granted) add(Manifest.permission.READ_MEDIA_VIDEO)
+            if (isNotEmpty()) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        }
+        if (Manifest.permission.READ_MEDIA_AUDIO !in granted) add(Manifest.permission.READ_MEDIA_AUDIO)
+    } else {
+        addAll(mediaPermissions(sdkInt).filterNot(granted::contains))
+    }
+}.toTypedArray()
