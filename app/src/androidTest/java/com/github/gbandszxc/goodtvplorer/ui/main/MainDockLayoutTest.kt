@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasClickAction
@@ -108,7 +109,8 @@ class MainDockLayoutTest {
     @Test
     fun listRemainsReachableAfterSwitchingFromAnOffscreenGridItem() {
         setBrowserContent(BrowserViewMode.Grid, canNavigateUp = false, itemCount = 40)
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("folder-24"))
+        composeRule.onNodeWithTag("browser-items")
+            .performScrollToNode(hasText("folder-24"))
         composeRule.onNode(hasText("folder-24") and hasClickAction())
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
             .assertIsFocused()
@@ -315,6 +317,14 @@ class MainDockLayoutTest {
 
         val expandedPanel = composeRule.onNodeWithTag("preview-panel").fetchSemanticsNode().boundsInRoot
         assertEquals(1.5f, expandedPanel.width / compactPanel.width, 0.02f)
+    }
+
+    @Test
+    fun quickPreviewContentIsScrollableOnShortScreens() {
+        setBrowserContent()
+
+        composeRule.onNodeWithTag("preview-content")
+            .assert(hasScrollAction())
     }
 
     private fun setBrowserContent(

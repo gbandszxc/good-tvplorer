@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -408,36 +410,45 @@ private fun ConnectionDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides density) {
-            Surface(
-                modifier = Modifier
-                    .width(560.dp)
-                    .testTag("connection-dialog")
-                    .border(
-                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        shape,
-                    ),
-                shape = shape,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp,
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize().padding(24.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                Surface(
+                    modifier = Modifier
+                        .widthIn(max = 560.dp)
+                        .fillMaxWidth()
+                        .heightIn(max = maxHeight)
+                        .testTag("connection-dialog")
+                        .border(
+                            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            shape,
+                        ),
+                    shape = shape,
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
                 ) {
-                    Text(
-                        title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    content()
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
-                        dismissButton()
-                        confirmButton()
+                        Text(
+                            title,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Box(Modifier.weight(1f, fill = false).fillMaxWidth()) {
+                            content()
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            dismissButton()
+                            confirmButton()
+                        }
                     }
                 }
             }

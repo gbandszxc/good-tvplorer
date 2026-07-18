@@ -127,7 +127,10 @@ private fun SettingsScreen(
     onClose: () -> Unit,
 ) {
     var section by remember { mutableStateOf(SettingsSection.Display) }
-    val firstMenuFocus = remember { FocusRequester() }
+    val displayMenuFocus = remember { FocusRequester() }
+    val cacheMenuFocus = remember { FocusRequester() }
+    val aboutMenuFocus = remember { FocusRequester() }
+    val backMenuFocus = remember { FocusRequester() }
     val decreaseFontFocus = remember { FocusRequester() }
     val increaseFontFocus = remember { FocusRequester() }
     val aboutActionFocus = remember { FocusRequester() }
@@ -135,7 +138,7 @@ private fun SettingsScreen(
     val context = LocalContext.current
     val githubUrl = "https://github.com/gbandszxc/good-tvplorer"
 
-    LaunchedEffect(Unit) { firstMenuFocus.requestFocus() }
+    LaunchedEffect(Unit) { displayMenuFocus.requestFocus() }
 
     Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(
@@ -156,22 +159,31 @@ private fun SettingsScreen(
                 SettingsMenuItem(
                     text = SettingsSection.Display.title,
                     selected = section == SettingsSection.Display,
-                    modifier = Modifier.focusRequester(firstMenuFocus),
+                    focusRequester = displayMenuFocus,
                     rightFocus = if (percentage > 80) decreaseFontFocus else increaseFontFocus,
                     onClick = { section = SettingsSection.Display },
                 )
-                SettingsMenuItem(SettingsSection.Cache.title, selected = section == SettingsSection.Cache) {
-                    section = SettingsSection.Cache
-                }
+                SettingsMenuItem(
+                    text = SettingsSection.Cache.title,
+                    selected = section == SettingsSection.Cache,
+                    focusRequester = cacheMenuFocus,
+                    onClick = { section = SettingsSection.Cache },
+                )
                 SettingsMenuItem(
                     text = SettingsSection.About.title,
                     selected = section == SettingsSection.About,
+                    focusRequester = aboutMenuFocus,
                     rightFocus = aboutActionFocus,
                     onClick = { section = SettingsSection.About },
                 )
             }
             Spacer(Modifier.weight(1f))
-            SettingsMenuItem("返回", selected = false, onClick = onClose)
+            SettingsMenuItem(
+                text = "返回",
+                selected = false,
+                focusRequester = backMenuFocus,
+                onClick = onClose,
+            )
         }
 
         Box(Modifier.width(1.dp).fillMaxHeight().background(SettingsDivider))
@@ -227,6 +239,7 @@ private fun SettingsScreen(
 private fun SettingsMenuItem(
     text: String,
     selected: Boolean,
+    focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
     rightFocus: FocusRequester? = null,
     onClick: () -> Unit,
@@ -264,9 +277,16 @@ private fun SettingsMenuItem(
                 RoundedCornerShape(8.dp),
             )
             .then(if (rightFocus == null) Modifier else Modifier.focusProperties { right = rightFocus })
+            .focusRequester(focusRequester)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .tvTabClick(selected = selected, onClick = onClick)
+            .tvTabClick(
+                selected = selected,
+                onClick = {
+                    focusRequester.requestFocus()
+                    onClick()
+                },
+            )
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

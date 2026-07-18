@@ -7,7 +7,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -162,7 +164,11 @@ internal fun BrowserScreen(
                     viewMode == BrowserViewMode.List -> {
                         val totalItems = visibleItems.size + if (canNavigateUp) 1 else 0
                         LazyColumn(
-                            modifier = Modifier.focusRequester(navigation.content).focusRestorer().focusGroup(),
+                            modifier = Modifier
+                                .testTag("browser-items")
+                                .focusRequester(navigation.content)
+                                .focusRestorer()
+                                .focusGroup(),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                         if (canNavigateUp) {
@@ -213,7 +219,11 @@ internal fun BrowserScreen(
                         val lastRowStart = if (totalItems == 0) 0 else ((totalItems - 1) / 4) * 4
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(4),
-                            modifier = Modifier.focusRequester(navigation.content).focusRestorer().focusGroup(),
+                            modifier = Modifier
+                                .testTag("browser-items")
+                                .focusRequester(navigation.content)
+                                .focusRestorer()
+                                .focusGroup(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
@@ -706,29 +716,37 @@ private fun PreviewPanel(item: FileItem?, thumbnail: File?, metadata: BrowserPre
     Column(Modifier.width(260.dp).fillMaxHeight().testTag("preview-panel").clip(RoundedCornerShape(12.dp)).background(Color(0xFF101A26)).padding(16.dp)) {
         Text("快速预览", color = Color(0xFF7CC7D8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(14.dp))
-        if (item == null) {
-            Text("选择文件后显示预览。", color = Color(0xFFA8B8C7), fontSize = 18.sp)
-            return@Column
-        }
-        MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 11f), onThumbnailVisible, onThumbnailHidden)
-        Spacer(Modifier.height(16.dp))
-        Text(item.name, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
-        Spacer(Modifier.height(8.dp))
-        Text(kindLabel(item.kind), color = Color(0xFFFFC857), fontSize = 18.sp)
-        Text(meta(item), color = Color(0xFFA8B8C7), fontSize = 16.sp)
-        val metadataMatchesItem = metadata.itemKey == MainViewModel.thumbKey(item)
-        if (metadataMatchesItem && metadata.loading) {
-            Spacer(Modifier.height(12.dp))
-            Text("正在读取媒体信息…", color = Color(0xFF728397), fontSize = 16.sp)
-        } else if (metadataMatchesItem && metadata.textSnippet != null) {
-            Spacer(Modifier.height(12.dp))
-            Text(metadata.textSnippet, color = Color(0xFFC8D5E2), fontSize = 16.sp, maxLines = 5, overflow = TextOverflow.Ellipsis)
-        } else if (metadataMatchesItem && metadata.metadata.entries.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            metadata.metadata.entries.forEach { entry ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(entry.label, modifier = Modifier.width(52.dp), color = Color(0xFF7CC7D8), fontSize = 16.sp)
-                    Text(entry.value, modifier = Modifier.weight(1f), color = Color(0xFFC8D5E2), fontSize = 16.sp, maxLines = 2)
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .testTag("preview-content"),
+        ) {
+            if (item == null) {
+                Text("选择文件后显示预览。", color = Color(0xFFA8B8C7), fontSize = 18.sp)
+                return@Column
+            }
+            MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 11f), onThumbnailVisible, onThumbnailHidden)
+            Spacer(Modifier.height(16.dp))
+            Text(item.name, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
+            Spacer(Modifier.height(8.dp))
+            Text(kindLabel(item.kind), color = Color(0xFFFFC857), fontSize = 18.sp)
+            Text(meta(item), color = Color(0xFFA8B8C7), fontSize = 16.sp)
+            val metadataMatchesItem = metadata.itemKey == MainViewModel.thumbKey(item)
+            if (metadataMatchesItem && metadata.loading) {
+                Spacer(Modifier.height(12.dp))
+                Text("正在读取媒体信息…", color = Color(0xFF728397), fontSize = 16.sp)
+            } else if (metadataMatchesItem && metadata.textSnippet != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(metadata.textSnippet, color = Color(0xFFC8D5E2), fontSize = 16.sp, maxLines = 5, overflow = TextOverflow.Ellipsis)
+            } else if (metadataMatchesItem && metadata.metadata.entries.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                metadata.metadata.entries.forEach { entry ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(entry.label, modifier = Modifier.width(52.dp), color = Color(0xFF7CC7D8), fontSize = 16.sp)
+                        Text(entry.value, modifier = Modifier.weight(1f), color = Color(0xFFC8D5E2), fontSize = 16.sp, maxLines = 2)
+                    }
                 }
             }
         }

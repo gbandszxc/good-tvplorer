@@ -61,6 +61,15 @@ class SettingsActivityTest {
     }
 
     @Test
+    fun touchSelectionMovesFocusToTheSelectedSection() {
+        composeRule
+            .onNode(hasText("缓存设置") and hasClickAction())
+            .performClick()
+            .assertIsSelected()
+            .assertIsFocused()
+    }
+
+    @Test
     fun aboutRowsExposeStaticAndActionSemantics() {
         sendKey(Key.DirectionDown)
         sendKey(Key.DirectionDown)

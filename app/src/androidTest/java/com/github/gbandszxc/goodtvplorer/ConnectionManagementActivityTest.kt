@@ -2,6 +2,7 @@ package com.github.gbandszxc.goodtvplorer
 
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
@@ -72,6 +73,25 @@ class ConnectionManagementActivityTest {
         saveButton().assertIsEnabled().assertIsFocused()
         sendKey(Key.DirectionLeft)
         cancelButton().assertIsFocused()
+    }
+
+    @Test
+    fun smbDialogStaysInsideViewportWithActionsVisible() {
+        composeRule.onNodeWithText("添加网络地址").performClick()
+        composeRule.onNode(hasText("SMB") and hasClickAction()).performClick()
+
+        val rootBounds = composeRule.onAllNodes(isRoot())
+            .fetchSemanticsNodes()
+            .last()
+            .boundsInRoot
+        val dialogBounds = composeRule.onNodeWithTag("connection-dialog")
+            .fetchSemanticsNode()
+            .boundsInRoot
+
+        assertTrue(dialogBounds.top >= rootBounds.top)
+        assertTrue(dialogBounds.bottom <= rootBounds.bottom)
+        cancelButton().assertIsDisplayed()
+        saveButton().assertIsDisplayed()
     }
 
     @Test
