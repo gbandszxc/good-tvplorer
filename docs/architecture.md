@@ -177,8 +177,11 @@ java.home=C\:\\path\\to\\jdk-17
 # JVM 单元测试
 .\gradlew.bat :app:testDebugUnitTest
 
-# 已连接设备上的 instrumentation 测试
-.\gradlew.bat :app:connectedDebugAndroidTest
+# 已连接设备上的 instrumentation 测试（覆盖安装并保留应用数据）
+.\scripts\run-connected-debug-tests.ps1
+
+# 仅运行指定测试类或方法
+.\scripts\run-connected-debug-tests.ps1 -Class "com.github.gbandszxc.goodtvplorer.SettingsActivityTest"
 
 # Android Lint
 .\gradlew.bat :app:lintDebug
@@ -188,6 +191,7 @@ java.home=C\:\\path\\to\\jdk-17
 ```
 
 Debug 使用 `com.github.gbandszxc.goodtvplorer.debug` application ID，可与 Release 版本同时安装。Debug APK 位于 `app/build/outputs/apk/debug/`。
+设备测试脚本只使用 `adb install -r` 覆盖安装并直接调用 instrumentation，不执行 uninstall。
 
 Release 默认启用 R8 代码压缩、混淆和资源压缩，并按 ARM ABI 输出独立 APK：
 
