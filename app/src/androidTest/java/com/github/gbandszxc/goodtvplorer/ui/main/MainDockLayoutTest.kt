@@ -13,11 +13,13 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
@@ -98,6 +100,28 @@ class MainDockLayoutTest {
         pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
         composeRule.onNodeWithContentDescription("设置").assertIsFocused()
         pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
+    }
+
+    @Test
+    fun listRemainsReachableAfterSwitchingFromAnOffscreenGridItem() {
+        setBrowserContent(BrowserViewMode.Grid, canNavigateUp = false, itemCount = 40)
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("folder-24"))
+        composeRule.onNode(hasText("folder-24") and hasClickAction())
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+            .assertIsFocused()
+
+        composeRule.onNodeWithContentDescription("切换为列表视图")
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+            .assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_CENTER)
+        composeRule.onNodeWithContentDescription("切换为网格视图").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
+
+        pressKey(KeyEvent.KEYCODE_DPAD_UP)
+        composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
         composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
     }
 

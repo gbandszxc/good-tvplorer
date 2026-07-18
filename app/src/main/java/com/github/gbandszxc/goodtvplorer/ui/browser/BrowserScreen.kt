@@ -117,7 +117,6 @@ internal fun BrowserScreen(
     val layoutSpacing = 16.dp * displayScale.coerceIn(0.8f, 1.2f)
     var searchHasFocus by remember { mutableStateOf(false) }
     var initialFocusConsumed by remember(path) { mutableStateOf(!navigation.contentInitialFocusAllowed) }
-    var focusedContentKey by remember(path) { mutableStateOf<String?>(null) }
     val searchableItems = searchItems ?: state.items
     val visibleItems = remember(searchableItems, searchQuery, sort) {
         filterAndSortBrowserItems(searchableItems, searchQuery, sort)
@@ -130,15 +129,8 @@ internal fun BrowserScreen(
         mutableStateOf(visibleItems.firstOrNull { it.handle.path == defaultFocusedPath })
     }
     val preview = focusedItem ?: visibleItems.firstOrNull()
-    val validContentKeys = remember(visibleItems, canNavigateUp) {
-        buildSet {
-            if (canNavigateUp) add(NavigateUpFocusKey)
-            visibleItems.forEach { add(it.handle.path) }
-        }
-    }
     val defaultContentKey = defaultFocusedPath ?: NavigateUpFocusKey.takeIf { canNavigateUp }
-    val contentEntryKey = focusedContentKey?.takeIf(validContentKeys::contains) ?: defaultContentKey
-    val contentAvailable = !state.loading && state.error == null && contentEntryKey != null
+    val contentAvailable = !state.loading && state.error == null && defaultContentKey != null
     val shouldAutoFocusContent = contentAvailable && !initialFocusConsumed && !searchHasFocus
     val emptyDirectoryHint = if (canNavigateUp) "选择返回上一级，或刷新当前目录。" else "刷新当前目录以重新检查文件。"
     SideEffect { navigation.contentAvailable = contentAvailable }
@@ -171,25 +163,20 @@ internal fun BrowserScreen(
                     viewMode == BrowserViewMode.List -> {
                         val totalItems = visibleItems.size + if (canNavigateUp) 1 else 0
                         LazyColumn(
-                            modifier = Modifier.focusRestorer(fallback = navigation.content).focusGroup(),
+                            modifier = Modifier.focusRequester(navigation.content).focusRestorer().focusGroup(),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                         if (canNavigateUp) {
                             item(key = "navigate-up") {
                                 NavigateUpRow(
                                     focusModifier = contentFocusModifier(
-                                        navigation = navigation,
-                                        attachEntryRequester = contentEntryKey == NavigateUpFocusKey,
                                         up = navigation.path,
                                         down = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
                                         left = navigation.dockTarget(browserActionsVisible = true),
                                         right = FocusRequester.Cancel,
-                                        onFocused = {
-                                            focusedContentKey = NavigateUpFocusKey
-                                            navigation.focusContent()
-                                        },
+                                        onFocused = navigation::focusContent,
                                     ),
-                                    initiallyFocused = shouldAutoFocusContent && contentEntryKey == NavigateUpFocusKey,
+                                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == NavigateUpFocusKey,
                                     onInitialFocus = { initialFocusConsumed = true },
                                     onClick = onNavigateUp,
                                 )
@@ -207,18 +194,13 @@ internal fun BrowserScreen(
                                     onThumbnailVisible,
                                     onThumbnailHidden,
                                     focusModifier = contentFocusModifier(
-                                        navigation = navigation,
-                                        attachEntryRequester = contentEntryKey == item.handle.path,
                                         up = if (position == 0) navigation.path else FocusRequester.Default,
                                         down = if (position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
                                         left = navigation.dockTarget(browserActionsVisible = true),
                                         right = FocusRequester.Cancel,
-                                        onFocused = {
-                                            focusedContentKey = item.handle.path
-                                            navigation.focusContent()
-                                        },
+                                        onFocused = navigation::focusContent,
                                     ),
-                                    initiallyFocused = shouldAutoFocusContent && contentEntryKey == item.handle.path,
+                                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == item.handle.path,
                                     onInitialFocus = { initialFocusConsumed = true },
                                     onFocus = { focusedItem = item },
                                     onClick = { onOpen(item) },
@@ -232,7 +214,7 @@ internal fun BrowserScreen(
                         val lastRowStart = if (totalItems == 0) 0 else ((totalItems - 1) / 4) * 4
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(4),
-                            modifier = Modifier.focusRestorer(fallback = navigation.content).focusGroup(),
+                            modifier = Modifier.focusRequester(navigation.content).focusRestorer().focusGroup(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
@@ -240,18 +222,13 @@ internal fun BrowserScreen(
                             item(key = "navigate-up") {
                                 NavigateUpTile(
                                     focusModifier = contentFocusModifier(
-                                        navigation = navigation,
-                                        attachEntryRequester = contentEntryKey == NavigateUpFocusKey,
                                         up = navigation.path,
                                         down = if (lastRowStart == 0) FocusRequester.Cancel else FocusRequester.Default,
                                         left = navigation.dockTarget(browserActionsVisible = true),
                                         right = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
-                                        onFocused = {
-                                            focusedContentKey = NavigateUpFocusKey
-                                            navigation.focusContent()
-                                        },
+                                        onFocused = navigation::focusContent,
                                     ),
-                                    initiallyFocused = shouldAutoFocusContent && contentEntryKey == NavigateUpFocusKey,
+                                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == NavigateUpFocusKey,
                                     onInitialFocus = { initialFocusConsumed = true },
                                     onClick = onNavigateUp,
                                 )
@@ -269,18 +246,13 @@ internal fun BrowserScreen(
                                     onThumbnailVisible,
                                     onThumbnailHidden,
                                     focusModifier = contentFocusModifier(
-                                        navigation = navigation,
-                                        attachEntryRequester = contentEntryKey == item.handle.path,
                                         up = if (position < 4) navigation.path else FocusRequester.Default,
                                         down = if (position >= lastRowStart) FocusRequester.Cancel else FocusRequester.Default,
                                         left = if (position % 4 == 0) navigation.dockTarget(browserActionsVisible = true) else FocusRequester.Default,
                                         right = if (position % 4 == 3 || position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
-                                        onFocused = {
-                                            focusedContentKey = item.handle.path
-                                            navigation.focusContent()
-                                        },
+                                        onFocused = navigation::focusContent,
                                     ),
-                                    initiallyFocused = shouldAutoFocusContent && contentEntryKey == item.handle.path,
+                                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == item.handle.path,
                                     onInitialFocus = { initialFocusConsumed = true },
                                     onFocus = { focusedItem = item },
                                     onClick = { onOpen(item) },
@@ -565,8 +537,6 @@ private fun PathEditButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
 }
 
 private fun contentFocusModifier(
-    navigation: MainFocusNavigation,
-    attachEntryRequester: Boolean,
     up: FocusRequester,
     down: FocusRequester,
     left: FocusRequester,
@@ -579,7 +549,6 @@ private fun contentFocusModifier(
         this.left = left
         this.right = right
     }
-    .then(if (attachEntryRequester) Modifier.focusRequester(navigation.content) else Modifier)
     .onFocusChanged { if (it.isFocused) onFocused() }
 
 @Composable
