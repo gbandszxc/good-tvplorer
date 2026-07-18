@@ -85,7 +85,7 @@ class ThumbnailRepository internal constructor(
         val target = File(cacheDir, "covers/${hash(key)}.jpg")
         if (target.exists() && target.length() > 0L) return target
         return runCatching {
-            val picture = retriever(source, item).use { it.embeddedPicture }
+            val picture = withRetriever(source, item) { it.embeddedPicture }
             if (picture == null) null else target.also {
                 it.parentFile?.mkdirs()
                 it.writeBytes(picture)
@@ -97,7 +97,7 @@ class ThumbnailRepository internal constructor(
         val target = File(cacheDir, "video-frames/${hash(key)}.jpg")
         if (target.exists() && target.length() > 0L) return target
         return runCatching {
-            val bitmap = retriever(source, item).use { it.getFrameAtTime(VIDEO_FRAME_TIME_US, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) } ?: return null
+            val bitmap = withRetriever(source, item) { it.getFrameAtTime(VIDEO_FRAME_TIME_US, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) } ?: return null
             target.also {
                 it.parentFile?.mkdirs()
                 it.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 82, out) }
@@ -110,8 +110,14 @@ class ThumbnailRepository internal constructor(
         return digest.take(16).joinToString("") { "%02x".format(it) }
     }
 
-    private fun retriever(source: FileSource, item: FileItem) = MediaMetadataRetriever().apply {
-        setDataSource(FileSourceMediaDataSource(source, item.handle.path, item.size ?: -1L))
+    private inline fun <T> withRetriever(source: FileSource, item: FileItem, block: (MediaMetadataRetriever) -> T): T {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(FileSourceMediaDataSource(source, item.handle.path, item.size ?: -1L))
+            block(retriever)
+        } finally {
+            retriever.release()
+        }
     }
 
     private companion object {
