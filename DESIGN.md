@@ -42,7 +42,15 @@ Good TVplorer 是客厅电视上的媒体文件工具。方向采用“冷静的
 
 使用 Compose 默认的单一无衬线字体族。产品 UI 使用固定字号，不使用流式字体。
 
-运行时界面缩放中的 `100%` 表示 Good TVplorer 的应用标准尺寸和字号，默认值为 `100%`。设置页面提供 `80%-120%` 九档，步长为 `5%`；缩放在三个 Compose Activity 根部统一作用于 `dp` 尺寸和 `sp` 文字，弹窗、表单、播放器控制层及预览页面不得再单独维护缩放倍率。当前字体内部使用 `0.75` 校准系数确定电视端的标准视觉大小；该系数不等同于 Android 原始字体比例，也不作为用户可见百分比。
+运行时界面缩放中的 `100%` 表示 Good TVplorer 的应用标准尺寸和字号，默认值为 `100%`。设置页面提供 `80%-120%` 九档，步长为 `5%`；缩放在所有 Compose Activity 根部统一作用于 `dp` 尺寸和 `sp` 文字，弹窗、表单、播放器控制层及预览页面不得再单独维护缩放倍率。当前字体内部使用 `0.75` 校准系数确定电视端的标准视觉大小；该系数不等同于 Android 原始字体比例，也不作为用户可见百分比。
+
+### 全局界面缩放接入
+
+- 后续新增 Compose Activity 必须在 `setContent` 的页面内容根部接入公共显示设置，通过 `CompositionLocalProvider` 同时提供缩放后的 `LocalDensity.density` 和校准后的 `fontScale`；禁止只缩放文字。
+- `displayScale` 必须限制在 `0.8f-1.2f`。根 Density 统一使用 `density = baseDensity.density * displayScale` 和 `fontScale = effectiveFontScale(displayScale) / displayScale`，确保 `dp` 与 `sp` 各缩放一次。
+- 页面、组件和普通弹窗应直接使用设计基准 `dp/sp`，不得再逐层传递缩放参数或手工乘以 `displayScale`，避免遗漏及双重缩放。
+- `Dialog` 等独立窗口可能重置 `LocalDensity`；此类窗口必须在创建前捕获已缩放 Density，并在弹窗内容根部重新提供。连接管理的共享 `ConnectionDialog` 是当前参考实现。
+- 新 Activity 或独立窗口必须补充 `80%` 与 `120%` 回归测试，以原始像素边界验证固定尺寸和文字均随缩放变化，两档物理尺寸比例应为 `1.5`。
 
 - App 标题：`40sp`
 - 页面路径 / 标题：`26-32sp`
