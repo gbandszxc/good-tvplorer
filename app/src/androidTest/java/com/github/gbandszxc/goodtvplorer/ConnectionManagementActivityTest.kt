@@ -33,7 +33,10 @@ class ConnectionManagementActivityTest {
             .assertIsFocused()
         sendKey(Key.DirectionCenter)
 
-        assertEquals(7, composeRule.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size)
+        val fields = composeRule.onAllNodes(hasSetTextAction()).fetchSemanticsNodes()
+        assertEquals(7, fields.size)
+        assertEquals(fields[1].boundsInRoot.top, fields[2].boundsInRoot.top, 1f)
+        assertEquals(fields[4].boundsInRoot.top, fields[5].boundsInRoot.top, 1f)
         field(0).assertIsFocused()
 
         sendKey(Key.DirectionRight)

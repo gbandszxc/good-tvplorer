@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -263,11 +264,17 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
     var domain by remember(existing) { mutableStateOf(existing?.domain.orEmpty()) }
     val scope = rememberCoroutineScope()
     val fieldRequesters = remember { List(7) { BringIntoViewRequester() } }
-    val firstFieldFocus = remember { FocusRequester() }
+    val focusRequesters = remember { List(7) { FocusRequester() } }
     var initialFocusRequested by remember { mutableStateOf(false) }
     fun Modifier.keepVisible(index: Int) = bringIntoViewRequester(fieldRequesters[index]).onFocusChanged {
         if (it.isFocused) scope.launch { fieldRequesters[index].bringIntoView() }
     }
+    fun Modifier.formField(index: Int) = focusRequester(focusRequesters[index])
+        .focusProperties {
+            if (index > 0) up = focusRequesters[index - 1]
+            if (index < focusRequesters.lastIndex) down = focusRequesters[index + 1]
+        }
+        .keepVisible(index)
     ConnectionDialog(
         onDismissRequest = onDismiss,
         title = if (existing == null) "新增 SMB" else "编辑 SMB",
@@ -278,9 +285,9 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
             ) {
                 Text(
                     if (existing == null) {
-                        "填写 SMB 服务器信息，主机和共享目录为必填项。"
+                        "主机和共享目录必填；用户名、密码均留空时匿名连接。"
                     } else {
-                        "修改已保存的网络连接信息。"
+                        "修改连接信息；用户名、密码均留空时匿名连接。"
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 18.sp,
@@ -291,53 +298,56 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
                     "名称",
                     Modifier
                         .fillMaxWidth()
-                        .focusRequester(firstFieldFocus)
+                        .formField(0)
                         .onGloballyPositioned {
                             if (!initialFocusRequested) {
                                 initialFocusRequested = true
-                                firstFieldFocus.requestFocus()
+                                focusRequesters[0].requestFocus()
                             }
-                        }
-                        .keepVisible(0),
+                        },
                 )
-                SmbTextField(
-                    host,
-                    { host = it },
-                    "主机",
-                    Modifier.fillMaxWidth().keepVisible(1),
-                )
-                SmbTextField(
-                    port,
-                    { port = it },
-                    "端口",
-                    Modifier.fillMaxWidth().keepVisible(2),
-                    keyboardType = KeyboardType.Number,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SmbTextField(
+                        host,
+                        { host = it },
+                        "主机",
+                        Modifier.weight(1f).formField(1),
+                    )
+                    SmbTextField(
+                        port,
+                        { port = it },
+                        "端口",
+                        Modifier.width(128.dp).formField(2),
+                        keyboardType = KeyboardType.Number,
+                    )
+                }
                 SmbTextField(
                     share,
                     { share = it },
                     "共享目录",
-                    Modifier.fillMaxWidth().keepVisible(3),
+                    Modifier.fillMaxWidth().formField(3),
                 )
-                SmbTextField(
-                    user,
-                    { user = it },
-                    "用户名",
-                    Modifier.fillMaxWidth().keepVisible(4),
-                )
-                SmbTextField(
-                    password,
-                    { password = it },
-                    "密码",
-                    Modifier.fillMaxWidth().keepVisible(5),
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardType = KeyboardType.Password,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SmbTextField(
+                        user,
+                        { user = it },
+                        "用户名",
+                        Modifier.weight(1f).formField(4),
+                    )
+                    SmbTextField(
+                        password,
+                        { password = it },
+                        "密码",
+                        Modifier.weight(1f).formField(5),
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardType = KeyboardType.Password,
+                    )
+                }
                 SmbTextField(
                     domain,
                     { domain = it },
                     "域（可选）",
-                    Modifier.fillMaxWidth().keepVisible(6),
+                    Modifier.fillMaxWidth().formField(6),
                     imeAction = ImeAction.Done,
                 )
             }
