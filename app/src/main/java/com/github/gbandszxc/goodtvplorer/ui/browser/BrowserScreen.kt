@@ -61,6 +61,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -111,7 +112,9 @@ internal fun BrowserScreen(
     onPreviewMetadataRequest: (FileItem) -> Unit,
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
+    displayScale: Float = 1f,
 ) {
+    val layoutSpacing = 16.dp * displayScale.coerceIn(0.8f, 1.2f)
     var searchHasFocus by remember { mutableStateOf(false) }
     var initialFocusConsumed by remember(path) { mutableStateOf(!navigation.contentInitialFocusAllowed) }
     var focusedContentKey by remember(path) { mutableStateOf<String?>(null) }
@@ -143,7 +146,10 @@ internal fun BrowserScreen(
         preview?.let(onPreviewMetadataRequest)
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(layoutSpacing),
+    ) {
         BrowserToolbar(
             path,
             sort,
@@ -155,8 +161,8 @@ internal fun BrowserScreen(
             onSearchFocusChange = { searchHasFocus = it },
         )
         Row(
-            Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier.weight(1f).fillMaxWidth().testTag("browser-content"),
+            horizontalArrangement = Arrangement.spacedBy(layoutSpacing),
         ) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when {
@@ -333,6 +339,7 @@ private fun BrowserToolbar(
 
     Row(
         Modifier.fillMaxWidth().height(48.dp)
+            .testTag("browser-toolbar")
             .focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,

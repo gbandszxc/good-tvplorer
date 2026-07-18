@@ -147,11 +147,15 @@ internal fun MainDockLayout(
 ) {
     val navigation = remember { MainFocusNavigation() }
     val layoutScale = displayScale.coerceIn(0.8f, 1.2f)
+    val layoutSpacing = 16.dp * layoutScale
     SideEffect {
         navigation.networkSelected = networkSelected
         if (showNetworkHub) navigation.contentAvailable = true
     }
-    Row(Modifier.fillMaxSize().background(Color(0xFF0B121A))) {
+    Row(
+        Modifier.fillMaxSize().testTag("main-layout").background(Color(0xFF0B121A)).padding(layoutSpacing),
+        horizontalArrangement = Arrangement.spacedBy(layoutSpacing),
+    ) {
         SideDock(
             onConnections,
             onSettings,
@@ -163,9 +167,12 @@ internal fun MainDockLayout(
             showNetworkHub,
             layoutScale,
         )
-        Column(Modifier.weight(1f).fillMaxHeight()) {
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(layoutSpacing),
+        ) {
             TopDock(networkSelected, showNetworkHub, layoutScale, navigation, onLocal, onNetwork)
-            Box(Modifier.weight(1f).fillMaxWidth().padding(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 16.dp)) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (showNetworkHub) {
                     NetworkHub(connections, navigation, onOpenSmb, onConnections)
                 } else {
@@ -187,7 +194,8 @@ private fun TopDock(
 ) {
     val down = if (showNetworkHub) navigation.contentTarget else navigation.path
     Row(
-        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 24.dp)
+        Modifier.fillMaxWidth().height(48.dp)
+            .testTag("source-bar")
             .focusRestorer(fallback = navigation.selectedSource)
             .focusGroup(),
         horizontalArrangement = Arrangement.Center,
@@ -293,8 +301,8 @@ private fun SideDock(
     val browserActionsVisible = browserViewMode != null
     val dockRight = navigation.mainTarget(showNetworkHub)
     Column(
-        Modifier.width(72.dp * displayScale).fillMaxHeight().background(Color(0xFF101A26)).padding(vertical = 14.dp)
-            .testTag("main-dock")
+        Modifier.width(72.dp * displayScale).fillMaxHeight().testTag("main-dock")
+            .background(Color(0xFF101A26)).padding(vertical = 14.dp)
             .focusRestorer(fallback = navigation.dockTarget(browserActionsVisible))
             .focusGroup(),
         horizontalAlignment = Alignment.CenterHorizontally,

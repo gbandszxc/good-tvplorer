@@ -108,6 +108,7 @@ class MainActivity : ComponentActivity() {
                                     onPreviewMetadataRequest = viewModel::requestBrowserPreviewMetadata,
                                     onThumbnailVisible = viewModel::requestThumbnail,
                                     onThumbnailHidden = viewModel::releaseThumbnail,
+                                    displayScale = state.fontScale,
                                 )
                             }
                         }

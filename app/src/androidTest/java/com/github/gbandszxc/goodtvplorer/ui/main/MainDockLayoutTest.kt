@@ -32,6 +32,7 @@ import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserPreviewMetadataState
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserState
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserSort
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserViewMode
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -213,11 +214,39 @@ class MainDockLayoutTest {
         }
     }
 
+    @Test
+    fun mainRegionsShareOneScaledSpacing() {
+        val displayScale = 1.2f
+        val spacing = 16f * displayScale
+        setBrowserContent(displayScale = displayScale)
+
+        val root = composeRule.onNodeWithTag("main-layout").getUnclippedBoundsInRoot()
+        val dock = composeRule.onNodeWithTag("main-dock").getUnclippedBoundsInRoot()
+        val source = composeRule.onNodeWithTag("source-bar").getUnclippedBoundsInRoot()
+        val toolbar = composeRule.onNodeWithTag("browser-toolbar").getUnclippedBoundsInRoot()
+        val content = composeRule.onNodeWithTag("browser-content").getUnclippedBoundsInRoot()
+
+        assertEquals(spacing, (dock.left - root.left).value, 0.5f)
+        assertEquals(spacing, (dock.top - root.top).value, 0.5f)
+        assertEquals(spacing, (root.bottom - dock.bottom).value, 0.5f)
+        assertEquals(spacing, (source.left - dock.right).value, 0.5f)
+        assertEquals(spacing, (source.top - root.top).value, 0.5f)
+        assertEquals(spacing, (root.right - source.right).value, 0.5f)
+        assertEquals(source.left.value, toolbar.left.value, 0.5f)
+        assertEquals(source.right.value, toolbar.right.value, 0.5f)
+        assertEquals(spacing, (toolbar.top - source.bottom).value, 0.5f)
+        assertEquals(toolbar.left.value, content.left.value, 0.5f)
+        assertEquals(toolbar.right.value, content.right.value, 0.5f)
+        assertEquals(spacing, (content.top - toolbar.bottom).value, 0.5f)
+        assertEquals(spacing, (root.bottom - content.bottom).value, 0.5f)
+    }
+
     private fun setBrowserContent(
         initialViewMode: BrowserViewMode = BrowserViewMode.Grid,
         canNavigateUp: Boolean = true,
         itemCount: Int = 1,
         searchQuery: String = "",
+        displayScale: Float = 1f,
     ) {
         composeRule.setContent {
             var viewMode by remember { mutableStateOf(initialViewMode) }
@@ -248,6 +277,7 @@ class MainDockLayoutTest {
                     },
                     onRefresh = { contentGeneration++ },
                     onBack = { contentGeneration++ },
+                    displayScale = displayScale,
                 ) { focusNavigation ->
                     key(contentGeneration) {
                         BrowserScreen(
@@ -271,6 +301,7 @@ class MainDockLayoutTest {
                             onPreviewMetadataRequest = {},
                             onThumbnailVisible = {},
                             onThumbnailHidden = {},
+                            displayScale = displayScale,
                         )
                     }
                 }
