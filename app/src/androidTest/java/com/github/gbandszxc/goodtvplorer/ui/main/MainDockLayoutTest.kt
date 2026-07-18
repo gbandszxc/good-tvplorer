@@ -1,30 +1,38 @@
 package com.github.gbandszxc.goodtvplorer.ui.main
 
 import android.view.KeyEvent
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.gbandszxc.goodtvplorer.data.FileHandle
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.data.FileKind
 import com.github.gbandszxc.goodtvplorer.data.SourceKind
+import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
 import com.github.gbandszxc.goodtvplorer.ui.browser.BrowserScreen
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvTheme
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserPreviewMetadataState
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserState
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserSort
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserViewMode
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -158,6 +166,51 @@ class MainDockLayoutTest {
 
         pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
         composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+    }
+
+    @Test
+    fun dockSourceAndSourceTextWidthsFollowDisplayScale() {
+        var displayScale by mutableStateOf(0.8f)
+        composeRule.setContent {
+            TvTheme {
+                val density = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density.density, effectiveFontScale(displayScale)),
+                ) {
+                    MainDockLayout(
+                        networkSelected = true,
+                        showNetworkHub = true,
+                        connections = emptyList(),
+                        onLocal = {},
+                        onNetwork = {},
+                        onOpenSmb = {},
+                        onConnections = {},
+                        onSettings = {},
+                        browserViewMode = null,
+                        onToggleView = {},
+                        onRefresh = {},
+                        onBack = {},
+                        displayScale = displayScale,
+                    ) {}
+                }
+            }
+        }
+
+        val compactDock = composeRule.onNodeWithTag("main-dock").getUnclippedBoundsInRoot()
+        val compactSource = composeRule.onNodeWithContentDescription("本机").getUnclippedBoundsInRoot()
+        val compactText = composeRule.onNodeWithText("本机", useUnmergedTree = true).getUnclippedBoundsInRoot()
+
+        composeRule.runOnIdle { displayScale = 1.2f }
+
+        composeRule.onNodeWithTag("main-dock").getUnclippedBoundsInRoot().let {
+            assertTrue(it.right - it.left > compactDock.right - compactDock.left)
+        }
+        composeRule.onNodeWithContentDescription("本机").getUnclippedBoundsInRoot().let {
+            assertTrue(it.right - it.left > compactSource.right - compactSource.left)
+        }
+        composeRule.onNodeWithText("本机", useUnmergedTree = true).getUnclippedBoundsInRoot().let {
+            assertTrue(it.right - it.left > compactText.right - compactText.left)
+        }
     }
 
     private fun setBrowserContent(

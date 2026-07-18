@@ -45,6 +45,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -141,9 +142,11 @@ internal fun MainDockLayout(
     onToggleView: () -> Unit,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
+    displayScale: Float = 1f,
     content: @Composable (MainFocusNavigation) -> Unit,
 ) {
     val navigation = remember { MainFocusNavigation() }
+    val layoutScale = displayScale.coerceIn(0.8f, 1.2f)
     SideEffect {
         navigation.networkSelected = networkSelected
         if (showNetworkHub) navigation.contentAvailable = true
@@ -158,9 +161,10 @@ internal fun MainDockLayout(
             onBack,
             navigation,
             showNetworkHub,
+            layoutScale,
         )
         Column(Modifier.weight(1f).fillMaxHeight()) {
-            TopDock(networkSelected, showNetworkHub, navigation, onLocal, onNetwork)
+            TopDock(networkSelected, showNetworkHub, layoutScale, navigation, onLocal, onNetwork)
             Box(Modifier.weight(1f).fillMaxWidth().padding(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 16.dp)) {
                 if (showNetworkHub) {
                     NetworkHub(connections, navigation, onOpenSmb, onConnections)
@@ -176,6 +180,7 @@ internal fun MainDockLayout(
 private fun TopDock(
     networkSelected: Boolean,
     showNetworkHub: Boolean,
+    displayScale: Float,
     navigation: MainFocusNavigation,
     onLocal: () -> Unit,
     onNetwork: () -> Unit,
@@ -196,9 +201,10 @@ private fun TopDock(
             right = navigation.networkSource,
             down = down,
             navigation = navigation,
+            displayScale = displayScale,
             onClick = onLocal,
         )
-        Spacer(Modifier.width(18.dp))
+        Spacer(Modifier.width(12.dp * displayScale))
         SourceTab(
             label = "网络",
             selected = networkSelected,
@@ -207,6 +213,7 @@ private fun TopDock(
             right = FocusRequester.Cancel,
             down = down,
             navigation = navigation,
+            displayScale = displayScale,
             onClick = onNetwork,
         )
     }
@@ -221,6 +228,7 @@ private fun SourceTab(
     right: FocusRequester,
     down: FocusRequester,
     navigation: MainFocusNavigation,
+    displayScale: Float,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -263,7 +271,7 @@ private fun SourceTab(
             .focusable()
             .tvOkClick(onClick)
             .semantics { contentDescription = label }
-            .padding(horizontal = 24.dp, vertical = 5.dp),
+            .padding(horizontal = 18.dp * displayScale, vertical = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = contentColor, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
@@ -280,11 +288,13 @@ private fun SideDock(
     onBack: () -> Unit,
     navigation: MainFocusNavigation,
     showNetworkHub: Boolean,
+    displayScale: Float,
 ) {
     val browserActionsVisible = browserViewMode != null
     val dockRight = navigation.mainTarget(showNetworkHub)
     Column(
-        Modifier.width(60.dp).fillMaxHeight().background(Color(0xFF101A26)).padding(vertical = 14.dp)
+        Modifier.width(72.dp * displayScale).fillMaxHeight().background(Color(0xFF101A26)).padding(vertical = 14.dp)
+            .testTag("main-dock")
             .focusRestorer(fallback = navigation.dockTarget(browserActionsVisible))
             .focusGroup(),
         horizontalAlignment = Alignment.CenterHorizontally,

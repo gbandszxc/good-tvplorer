@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                             onToggleView = viewModel::toggleBrowserViewMode,
                             onRefresh = viewModel::refresh,
                             onBack = viewModel::goBack,
+                            displayScale = state.fontScale,
                         ) { focusNavigation ->
                             if (screen is Screen.Browser) {
                                 BrowserScreen(
