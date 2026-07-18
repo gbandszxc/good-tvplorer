@@ -302,6 +302,20 @@ class MainDockLayoutTest {
         assertEquals(spacing, (root.bottom - content.bottom).value, 0.5f)
     }
 
+    @Test
+    fun previewPanelFollowsDisplayScale() {
+        var displayScale by mutableStateOf(0.8f)
+        setBrowserContent(displayScaleProvider = { displayScale })
+
+        val compactPanel = composeRule.onNodeWithTag("preview-panel").getUnclippedBoundsInRoot()
+
+        composeRule.runOnIdle { displayScale = 1.2f }
+
+        val expandedPanel = composeRule.onNodeWithTag("preview-panel").getUnclippedBoundsInRoot()
+        assertEquals(208f, (compactPanel.right - compactPanel.left).value, 0.5f)
+        assertEquals(312f, (expandedPanel.right - expandedPanel.left).value, 0.5f)
+    }
+
     private fun setBrowserContent(
         initialViewMode: BrowserViewMode = BrowserViewMode.Grid,
         canNavigateUp: Boolean = true,
