@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream
 import java.net.SocketTimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
@@ -106,6 +107,19 @@ class SmbRetryTest {
 
         assertEquals(100, bytes.size)
         assertTrue(calls > 2)
+    }
+
+    @Test
+    fun `blank SMB credentials use anonymous authentication`() {
+        val anonymous = smbAuthenticationContext(
+            SmbConnectionInfo("anonymous", "Anonymous", "nas.local", share = "media", username = "", password = ""),
+        )
+        val passwordlessUser = smbAuthenticationContext(
+            SmbConnectionInfo("guest", "Guest", "nas.local", share = "media", username = "guest", password = ""),
+        )
+
+        assertTrue(anonymous.isAnonymous)
+        assertFalse(passwordlessUser.isAnonymous)
     }
 
     @Test

@@ -126,6 +126,13 @@ internal inline fun copyStreamCancellable(
 internal fun smbReadBufferSize(negotiatedMaxReadSize: Int): Int =
     negotiatedMaxReadSize.coerceIn(64 * 1024, 1024 * 1024)
 
+internal fun smbAuthenticationContext(info: SmbConnectionInfo): AuthenticationContext =
+    if (info.username.isBlank() && info.password.isEmpty()) {
+        AuthenticationContext.anonymous()
+    } else {
+        AuthenticationContext(info.username, info.password.toCharArray(), info.domain.orEmpty())
+    }
+
 class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoCloseable {
     override val key = "smb:${info.id}"
     override val kind = SourceKind.Smb
@@ -303,8 +310,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         var connected = false
         try {
             nextConnection = nextClient.connect(info.host, info.port)
-            val auth = AuthenticationContext(info.username, info.password.toCharArray(), info.domain.orEmpty())
-            nextSession = nextConnection.authenticate(auth)
+            nextSession = nextConnection.authenticate(smbAuthenticationContext(info))
             nextShare = nextSession.connectShare(info.share) as? DiskShare
                 ?: error("不是磁盘共享：${info.share}")
             return SmbResources(
