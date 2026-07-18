@@ -1,6 +1,5 @@
 package com.github.gbandszxc.goodtvplorer.data
 
-import android.content.Context
 import android.os.Environment
 import com.github.gbandszxc.goodtvplorer.domain.FileTypeDetector
 import kotlinx.coroutines.Dispatchers
@@ -10,20 +9,24 @@ import java.io.InputStream
 import java.io.RandomAccessFile
 import java.util.UUID
 
-class LocalFileSource(private val context: Context) : FileSource {
+class LocalFileSource internal constructor(rootDirectory: File) : FileSource {
+    @Suppress("DEPRECATION")
+    constructor() : this(Environment.getExternalStorageDirectory())
+
     override val key = "local"
     override val kind = SourceKind.Local
     override val title = "本地文件"
+    private val root = rootDirectory.canonicalFile
+    private val rootPrefix = root.path.trimEnd(File.separatorChar) + File.separator
 
     override suspend fun list(path: String): List<FileItem> = withContext(Dispatchers.IO) {
-        if (path.isBlank()) return@withContext roots()
-        val dir = File(path)
+        val dir = resolve(path)
         val files = dir.listFiles().orEmpty()
         files.sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
             .map { file ->
                 FileItem(
                     name = file.name,
-                    handle = FileHandle(key, kind, file.absolutePath),
+                    handle = FileHandle(key, kind, relativePath(file)),
                     kind = FileTypeDetector.detect(file.name, file.isDirectory),
                     size = file.takeIf { it.isFile }?.length(),
                     modifiedAtMillis = file.lastModified().takeIf { it > 0 },
@@ -34,7 +37,7 @@ class LocalFileSource(private val context: Context) : FileSource {
     override suspend fun readRange(path: String, offset: Long, maxBytes: Int): ByteArray = withContext(Dispatchers.IO) {
         require(offset >= 0 && maxBytes >= 0)
         if (maxBytes == 0) return@withContext ByteArray(0)
-        RandomAccessFile(path, "r").use { input ->
+        RandomAccessFile(resolve(path), "r").use { input ->
             input.seek(offset)
             val buffer = ByteArray(maxBytes)
             val read = input.read(buffer)
@@ -43,7 +46,7 @@ class LocalFileSource(private val context: Context) : FileSource {
     }
 
     override suspend fun openStream(path: String): InputStream = withContext(Dispatchers.IO) {
-        File(path).inputStream()
+        resolve(path).inputStream()
     }
 
     override suspend fun copyTo(path: String, target: File) = withContext(Dispatchers.IO) {
@@ -51,25 +54,39 @@ class LocalFileSource(private val context: Context) : FileSource {
         val parent = requireNotNull(target.parentFile) { "缓存文件缺少父目录" }.also { it.mkdirs() }
         val partial = File(parent, ".${target.name}.${UUID.randomUUID()}.part")
         try {
-            File(path).inputStream().use { input -> partial.outputStream().use(input::copyTo) }
+            resolve(path).inputStream().use { input -> partial.outputStream().use(input::copyTo) }
             check(commitCacheFile(partial, target)) { "无法提交缓存文件：${target.name}" }
         } finally {
             partial.delete()
         }
     }
 
-    private fun roots(): List<FileItem> {
-        val dirs = linkedMapOf<String, File>()
-        fun add(name: String, file: File?) {
-            if (file != null && file.exists()) dirs[name] = file
+    internal fun normalizePath(path: String): String = runCatching {
+        val cleaned = systemPath(path)
+        val rootPath = root.path
+        val legacyRootPath = rootPath.trimStart(File.separatorChar)
+        val relative = when {
+            cleaned == rootPath || cleaned == legacyRootPath -> ""
+            cleaned.startsWith("$rootPath${File.separator}") -> cleaned.removePrefix(rootPath).trimStart(File.separatorChar)
+            cleaned.startsWith("$legacyRootPath${File.separator}") -> cleaned.removePrefix(legacyRootPath).trimStart(File.separatorChar)
+            else -> cleaned
         }
-        add("App files", context.getExternalFilesDir(null))
-        add("Download", Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS))
-        add("Movies", Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES))
-        add("Pictures", Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES))
-        add("Music", Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC))
-        return dirs.map { (name, file) ->
-            FileItem(name, FileHandle(key, kind, file.absolutePath), FileKind.Directory, null, file.lastModified())
+        relativePath(resolve(relative))
+    }.getOrDefault("")
+
+    private fun resolve(path: String): File {
+        val requested = File(systemPath(path))
+        val resolved = (if (requested.isAbsolute) requested else File(root, requested.path)).canonicalFile
+        require(resolved == root || resolved.path.startsWith(rootPrefix)) {
+            "本地路径超出共享存储根目录"
         }
+        return resolved
     }
+
+    private fun relativePath(file: File): String =
+        if (file == root) "" else file.absolutePath.removePrefix(rootPrefix).replace(File.separatorChar, '/')
+
+    private fun systemPath(path: String): String = path.trim()
+        .replace('\\', File.separatorChar)
+        .replace('/', File.separatorChar)
 }

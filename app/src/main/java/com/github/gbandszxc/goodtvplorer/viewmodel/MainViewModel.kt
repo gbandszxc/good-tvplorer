@@ -255,7 +255,7 @@ internal fun resolveBrowserPath(currentPath: String, enteredPath: String): Strin
 }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
-    private val local = LocalFileSource(app)
+    private val local = LocalFileSource()
     private val connectionsStore = SmbConnectionRepository(app)
     private val displaySettings = DisplaySettingsRepository(app)
     private val navigation = BrowserNavigationRepository(app)
@@ -422,8 +422,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { openBrowser(screen.sourceKey, resolveBrowserPath(screen.path, path)) }
     }
 
-    private suspend fun openBrowser(sourceKey: String, path: String, forceRefresh: Boolean = false) {
+    private suspend fun openBrowser(sourceKey: String, requestedPath: String, forceRefresh: Boolean = false) {
         val source = sources[sourceKey] ?: return showError("文件源不存在")
+        val path = if (sourceKey == local.key) local.normalizePath(requestedPath) else requestedPath
         val screen = Screen.Browser(sourceKey, path)
         val clearSearch = _state.value.screen != screen
         val focusAnchorPath = navigation.focusAnchorFor(sourceKey, path)

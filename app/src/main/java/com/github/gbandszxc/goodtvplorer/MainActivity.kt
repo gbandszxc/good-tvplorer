@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
                             if (screen is Screen.Browser) {
                                 BrowserScreen(
                                     path = screen.path,
+                                    canNavigateUp = screen.sourceKey != "local" || screen.path.isNotBlank(),
                                     state = state.browser,
                                     thumbnails = state.thumbnails,
                                     viewMode = state.browserViewMode,

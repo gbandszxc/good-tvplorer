@@ -87,6 +87,7 @@ import java.io.File
 @Composable
 fun BrowserScreen(
     path: String,
+    canNavigateUp: Boolean,
     state: BrowserState,
     thumbnails: Map<String, File>,
     viewMode: BrowserViewMode,
@@ -119,7 +120,8 @@ fun BrowserScreen(
         mutableStateOf(visibleItems.firstOrNull { it.handle.path == defaultFocusedPath })
     }
     val preview = focusedItem ?: visibleItems.firstOrNull()
-    val focusNavigateUp = !state.loading && state.error == null && state.items.isEmpty() && !searchHasFocus
+    val focusNavigateUp = canNavigateUp && !state.loading && state.error == null && state.items.isEmpty() && !searchHasFocus
+    val emptyDirectoryHint = if (canNavigateUp) "选择返回上一级，或刷新当前目录。" else "刷新当前目录以重新检查文件。"
     LaunchedEffect(preview?.handle?.sourceKey, preview?.handle?.path) {
         preview?.let(onPreviewMetadataRequest)
     }
@@ -144,11 +146,13 @@ fun BrowserScreen(
                     state.loading -> LoadingPanel()
                     state.error != null -> MessagePanel("连接或读取失败", state.error, Color(0xFFFFA3A3))
                     viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item(key = "navigate-up") {
-                            NavigateUpRow(initiallyFocused = focusNavigateUp, onClick = onNavigateUp)
+                        if (canNavigateUp) {
+                            item(key = "navigate-up") {
+                                NavigateUpRow(initiallyFocused = focusNavigateUp, onClick = onNavigateUp)
+                            }
                         }
                         when {
-                            state.items.isEmpty() -> item { InlineMessage("目录为空", "选择返回上一级，或刷新当前目录。") }
+                            state.items.isEmpty() -> item { InlineMessage("目录为空", emptyDirectoryHint) }
                             visibleItems.isEmpty() && searchLoading -> item { InlineMessage("正在递归搜索", "正在检索当前目录及其子目录。") }
                             visibleItems.isEmpty() -> item { InlineMessage("未找到匹配项目", "尝试修改搜索词。") }
                             else -> items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
@@ -157,11 +161,13 @@ fun BrowserScreen(
                         }
                     }
                     else -> LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        item(key = "navigate-up") {
-                            NavigateUpTile(initiallyFocused = focusNavigateUp, onClick = onNavigateUp)
+                        if (canNavigateUp) {
+                            item(key = "navigate-up") {
+                                NavigateUpTile(initiallyFocused = focusNavigateUp, onClick = onNavigateUp)
+                            }
                         }
                         when {
-                            state.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("目录为空", "选择返回上一级，或刷新当前目录。") }
+                            state.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("目录为空", emptyDirectoryHint) }
                             visibleItems.isEmpty() && searchLoading -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("正在递归搜索", "正在检索当前目录及其子目录。") }
                             visibleItems.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("未找到匹配项目", "尝试修改搜索词。") }
                             else -> items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
