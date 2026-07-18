@@ -1,7 +1,10 @@
 package com.github.gbandszxc.goodtvplorer.domain
 
 import android.net.Uri
+import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.media3.common.C
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
@@ -11,11 +14,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
 data class StreamingMedia(val source: FileSource, val item: FileItem) {
-    val uri: Uri = Uri.parse("goodtvplorer://media/${Uri.encode(item.name)}")
+    val uri: Uri = "goodtvplorer://media/${Uri.encode(item.name)}".toUri()
 }
 
 data class TimedTextCue(val startMs: Long, val endMs: Long, val text: String)
 
+@OptIn(UnstableApi::class)
 class FileSourceDataSource(private val media: StreamingMedia) : BaseDataSource(false) {
     private var position = 0L
     private var remaining = 0L
