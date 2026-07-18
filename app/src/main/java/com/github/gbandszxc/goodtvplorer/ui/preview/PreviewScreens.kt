@@ -1,6 +1,7 @@
 package com.github.gbandszxc.goodtvplorer.ui.preview
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -8,7 +9,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +31,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +67,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.common.text.CueGroup
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -164,7 +167,10 @@ fun ImageViewer(
                     }
                     visibleItems.forEach { item ->
                         val key = MainViewModel.thumbKey(item)
-                        if (heldItems.putIfAbsent(key, item) == null) onThumbnailVisible(item)
+                        heldItems.getOrPut(key) {
+                            onThumbnailVisible(item)
+                            item
+                        }
                     }
                 }
         } finally {
@@ -305,7 +311,7 @@ private fun ImageFilmstripItem(
 
 @Composable
 fun TextPreview(name: String, state: PreviewState, onBack: () -> Unit) {
-    var page by remember(state.text) { mutableStateOf(0) }
+    var page by remember(state.text) { mutableIntStateOf(0) }
     val pages = remember(state.text) { textPages(state.text) }
     val pageFocus = remember { FocusRequester() }
     LaunchedEffect(state.loading) { if (!state.loading) pageFocus.requestFocus() }
@@ -476,6 +482,7 @@ fun VideoPreview(
     else -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { Text("没有可用的视频", color = Color(0xFFA8B8C7), fontSize = 26.sp) }
 }
 
+@OptIn(UnstableApi::class)
 internal enum class VideoScaleMode(
     val label: String,
     val resizeMode: Int,
@@ -514,7 +521,7 @@ private fun VideoPlayer(
     var playing by remember { mutableStateOf(false) }
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
-    var speed by remember { mutableStateOf(1f) }
+    var speed by remember { mutableFloatStateOf(1f) }
     var error by remember { mutableStateOf<String?>(null) }
     var embeddedSubtitle by remember { mutableStateOf("") }
     var videoSize by remember { mutableStateOf(VideoSize.UNKNOWN) }
@@ -615,8 +622,9 @@ private fun VideoPlayer(
 }
 
 @Composable
+@OptIn(UnstableApi::class)
 private fun VideoSurface(player: ExoPlayer, mode: VideoScaleMode, videoSize: VideoSize, density: Float) {
-    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
         val modifier = when {
             mode == VideoScaleMode.Original -> Modifier.requiredSize((videoSize.width / density).dp, (videoSize.height / density).dp)
             mode.targetRatio != null -> Modifier.fillMaxSize().aspectRatio(mode.targetRatio, matchHeightConstraintsFirst = true)
