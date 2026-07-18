@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,6 +61,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -76,6 +78,7 @@ import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
+import com.github.gbandszxc.goodtvplorer.R
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
 import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
@@ -303,7 +306,12 @@ private fun ImageFilmstripItem(
         if (thumbnail != null) {
             AsyncImage(model = thumbnail, contentDescription = item.name, modifier = Modifier.fillMaxSize().padding(6.dp), contentScale = ContentScale.Crop)
         } else {
-            Text("IMG", color = if (focused) Color(0xFF151007) else Color(0xFFC9D8E5), fontSize = 24.sp)
+            Icon(
+                painterResource(R.drawable.ic_image),
+                contentDescription = "图片",
+                tint = if (focused) Color(0xFF151007) else Color(0xFFC9D8E5),
+                modifier = Modifier.requiredSize(36.dp),
+            )
         }
         if (selected) Text("当前", color = Color(0xFFF3F7FA), fontSize = 16.sp, modifier = Modifier.align(Alignment.BottomCenter).background(Color(0xCC101A26)).padding(horizontal = 8.dp, vertical = 2.dp))
     }
@@ -426,7 +434,7 @@ private fun AudioPlayer(
         ) {
             Box(Modifier.weight(0.38f).fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0xFF101A26)), contentAlignment = Alignment.Center) {
                 if (artwork != null) AsyncImage(model = artwork, contentDescription = "音频封面", modifier = Modifier.fillMaxSize().padding(12.dp), contentScale = ContentScale.Fit)
-                else Text("AUD", color = Color(0xFF7CC7D8), fontSize = 40.sp)
+                else Icon(painterResource(R.drawable.ic_disc), contentDescription = "暂无音频封面", tint = Color(0xFF7CC7D8), modifier = Modifier.requiredSize(72.dp))
             }
             Box(Modifier.weight(0.62f).fillMaxSize().background(Color(0xFF101A26)).padding(24.dp), contentAlignment = Alignment.Center) {
                 Text(lyric?.text ?: if (lyrics.isEmpty()) "未找到同名 LRC 歌词" else "♪", color = if (lyric == null) Color(0xFFA8B8C7) else Color(0xFFF3F7FA), fontSize = 28.sp, lineHeight = 40.sp)

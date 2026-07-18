@@ -526,12 +526,13 @@ private fun MediaThumb(item: FileItem, thumbnail: File?, modifier: Modifier, onT
     Box(modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
         if (model != null) {
             AsyncImage(model = model, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        } else if (item.kind == FileKind.Text) {
-            Icon(painterResource(R.drawable.ic_text), contentDescription = "文本文件", tint = Color(0xFFC9D8E5), modifier = Modifier.size(36.dp))
-        } else if (item.kind == FileKind.Audio) {
-            Icon(painterResource(R.drawable.ic_disc), contentDescription = "音频文件", tint = Color(0xFFC9D8E5), modifier = Modifier.size(38.dp))
         } else {
-            Text(icon(item.kind), color = Color(0xFFC9D8E5), fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                painterResource(fileKindIconRes(item.kind)),
+                contentDescription = kindLabel(item.kind),
+                tint = Color(0xFFC9D8E5),
+                modifier = Modifier.size(38.dp),
+            )
         }
     }
 }
@@ -567,11 +568,11 @@ private fun kindLabel(kind: FileKind): String = when (kind) {
     FileKind.Other -> "文件"
 }
 
-private fun icon(kind: FileKind): String = when (kind) {
-    FileKind.Directory -> "DIR"
-    FileKind.Image -> "IMG"
-    FileKind.Text -> "TXT"
-    FileKind.Audio -> "AUD"
-    FileKind.Video -> "VID"
-    FileKind.Other -> "FILE"
+internal fun fileKindIconRes(kind: FileKind): Int = when (kind) {
+    FileKind.Directory -> R.drawable.ic_folder
+    FileKind.Image -> R.drawable.ic_image
+    FileKind.Text -> R.drawable.ic_text
+    FileKind.Audio -> R.drawable.ic_disc
+    FileKind.Video -> R.drawable.ic_video
+    FileKind.Other -> R.drawable.ic_file
 }
