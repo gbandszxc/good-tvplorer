@@ -15,6 +15,6 @@
 ## 交付要求
 
 - 修改持久化结构后必须运行 Debug 构建、单元测试和相关 instrumentation 测试。
-- MuMu `127.0.0.1:16384` 是保留用户数据的验收设备，禁止在该设备运行 `connectedDebugAndroidTest` 等会卸载测试目标的 instrumentation 任务，以免删除 Room 数据库和 Android Keystore 密钥。
-- instrumentation 测试必须使用独立的干净模拟器或测试设备；向验收 MuMu 交付时只允许使用 `adb install -r` 覆盖安装 Debug APK。
+- 日常开发和验收环境必须使用当前平台支持的覆盖安装方式更新应用，不得先卸载再安装，以免删除 Room 数据库和 Android Keystore 密钥。
+- 只有明确进行需要卸载或清理数据的测试时，才允许在独立、可丢弃数据的测试环境中卸载应用；不得对保留业务数据的设备执行此类测试。
 - 每个独立逻辑改动单独提交，提交信息使用规范前缀与中文说明。
