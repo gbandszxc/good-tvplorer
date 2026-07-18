@@ -4,186 +4,123 @@
   <img src="docs/raw/icon/raw_icon.png" width="200" alt="Good TVplorer">
 </p>
 
-为 Android TV 与电视遥控器设计的文件管理器，同时浏览**本地存储**与 **SMB / NAS** 媒体库。
+Good TVplorer 是面向 Android TV、电视盒子和投影设备的遥控器优先文件浏览器，用于统一访问本地存储与 SMB / NAS 媒体库。
 
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.3.10-7F52FF?logo=kotlin)
 ![AGP](https://img.shields.io/badge/AGP-9.2.1-3DDC84?logo=android)
 ![minSdk](https://img.shields.io/badge/minSdk-23-3DDC84)
 ![targetSdk](https://img.shields.io/badge/targetSdk-36-3DDC84)
 
-> ⚠️ **安全提示**：当前版本为 MVP，SMB 密码以明文存储在应用 SQLite 数据库中。请勿在不可信设备上保存重要凭据，加密方案已列入后续计划。
+## 核心能力
 
----
+- **电视端交互**：提供 Leanback 启动入口、完整 D-pad 焦点导航、OK / Back 键操作和基础触屏兼容。
+- **统一文件浏览**：使用同一套列表、网格和快速预览界面访问本地目录与 SMB 共享。
+- **SMB 连接管理**：支持新增、编辑和删除连接，配置 Host、Port、Share、用户名、密码与 Domain。
+- **网络读取优化**：复用 SMB 会话，支持失效重连、单次重试、范围读取和大文件流水线复制。
+- **媒体预览**：支持图片浏览、音频播放与 LRC 歌词、视频播放与 SRT / 内嵌字幕、文本行号与翻页。
+- **状态恢复**：使用 Room 保存显示设置、最近目录和 D-pad 焦点锚点。
 
-## 功能特性
+## 安全与数据
 
-- **Android TV 原生体验**：Leanback 启动器入口、D-pad 焦点导航、基础触屏操作、固定本机/网络顶部 Dock 与连接/设置侧边 Dock。
-- **本地 + SMB 统一浏览**：同一套界面同时浏览 Android 本地目录与 SMB / NAS 共享。
-- **SMB 性能优化**：连接复用、空闲重连、单次重试、≥4MB 大文件流水线读取。
-- **媒体预览**：低内存友好的图片查看与胶卷缩略图懒加载；音频封面、LRC 歌词与播放；沉浸式视频播放、内嵌/SRT 字幕、倍速和画面模式；媒体左右滑动切换、视频点按控制层、触屏拖动进度；带行号和翻页的文本预览。
-- **列表 / 网格双模式**：右侧实时预览当前焦点文件。
-- **连接管理与显示设置**：独立横屏页面管理 SMB 新增、编辑、删除；显示设置提供字体缩放。
-- **统一持久化**：Room + SQLite 统一保存连接、设置和浏览恢复状态。
-- **现代 Android 技术栈**：Kotlin + Jetpack Compose + Material3 + Room + Media3 + Coil3。
+SMB 密码在写入 Room / SQLite 前使用 AES-256-GCM 加密，密钥由 Android Keystore 生成并保存在当前设备。每条密文使用独立随机 IV，并绑定对应的连接 ID；从旧版本升级时，已有明文密码会在数据库迁移中自动转换。
 
-## 界面示意
+`good_tvplorer.db` 已从 Android 云备份和设备间迁移中排除，因此 SMB 连接、显示设置与浏览恢复状态不会自动转移到新设备。应用建立 SMB 会话时仍需在进程内临时解密密码；该机制用于降低数据库被离线复制后的凭据暴露风险，不能替代可信设备、系统锁屏和操作系统安全更新。
 
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│      │                    [ 本机 ] [ 网络 / SMB ]                 │
-├──────┼──────────────────────────────────────────────┬───────────────┤
-│      │ 媒体入口 / 下载       [网格] [刷新] [返回]     │   快速预览    │
-│      │ [IMG] vacation.jpg        [VID] demo.mp4      │   ┌───────┐   │
-│ 连接 │ [DIR] documents           [AUD] song.flac     │   │ 缩略图 │   │
-│ 设置 │                                                │   └───────┘   │
-│      │ 网络为空时：             [ 去配置 ]           │  vacation.jpg │
-└──────┴──────────────────────────────────────────────┴───────────────┘
-```
+应用不会主动记录密码，相关错误信息也不包含凭据内容。
 
-> 实际截图待补充。当前 UI 包含深色主题首页、文件浏览器（列表/网格）、右侧快速预览面板。
+## 运行环境
 
-## 快速开始
+### 目标设备
 
-### 支持的设备
+- Android TV、电视盒子或投影设备
+- Android 6.0（API 23）及以上
+- `armeabi-v7a` 或 `arm64-v8a`
+- 遥控器 / D-pad；触屏为兼容输入方式
 
-- **推荐**：Android TV、电视盒子、投影等带遥控器的大屏设备（`LEANBACK_LAUNCHER` 入口）。
-- **可运行**：普通 Android 手机/平板（`minSdk = 23`）；布局仍以横屏电视为主，同时支持点击、滚动、媒体滑动切换与播放进度拖动等基础触屏操作。
-- **模拟器**：Android TV 模拟器或普通 Android 模拟器均可。
-- **CPU 架构**：`armeabi-v7a`、`arm64-v8a`。
+### 开发环境
 
-### 环境要求
-
+- Windows PowerShell
 - JDK 17
 - Android SDK API 36
-- 一台已开启开发者选项并连接好的设备/模拟器
+- Android Studio，或项目内置的 Gradle Wrapper
 
-### 配置本地路径
-
-项目根目录下需要一个 `local.properties`（已加入 `.gitignore`，不会提交到仓库），同时指定 Android SDK 和 JDK 路径：
+在项目根目录创建已被 Git 忽略的 `local.properties`：
 
 ```properties
-# local.properties（gitignored）
 sdk.dir=C\:\\path\\to\\Android\\Sdk
 java.home=C\:\\path\\to\\jdk-17
 ```
 
-首次构建前请根据本机环境创建此文件。参考本机已有配置：
+发布构建还需要在 `key.properties` 中提供签名配置。不要提交本机路径、密码或签名文件。
 
-```properties
-sdk.dir=C\:\\Users\\gbandszxc\\AppData\\Local\\Android\\Sdk
-java.home=D\:\\Develop\\Java\\zulu17.58.21
-```
-
-### 构建与安装
+## 构建与验证
 
 ```powershell
-# 调试构建
+# Debug APK
 .\gradlew.bat :app:assembleDebug
 
-# 安装到已连接设备
-.\gradlew.bat :app:installDebug
-```
+# JVM 单元测试
+.\gradlew.bat :app:testDebugUnitTest
 
-也可以直接用 Android Studio 打开项目目录，在 Android TV 模拟器或真机上运行 `app`。
-
-### 运行后
-
-1. 首次启动会请求媒体读取权限，请允许。
-2. 启动后默认进入本机公共目录。
-3. 从顶部选择**网络 / SMB**；未配置时选择**去配置**，或在左侧 Dock 打开**连接管理**新增、编辑、删除 SMB。
-4. 在左侧 Dock 打开**设置**，可调整显示字体缩放。
-
-## 开发命令速查
-
-```powershell
-# 调试构建与安装
-.\gradlew.bat :app:assembleDebug
-.\gradlew.bat :app:installDebug
-
-# 清理构建产物
-.\gradlew.bat clean
-
-# 直接运行到已连接设备
+# 已连接设备上的 instrumentation 测试
 .\gradlew.bat :app:connectedDebugAndroidTest
 
-# 查看所有可用任务
-.\gradlew.bat tasks
-
-# 静态检查（lint）
+# Android Lint
 .\gradlew.bat :app:lintDebug
 
-# 依赖树
-.\gradlew.bat :app:dependencies --configuration debugRuntimeClasspath
-
-# 发布构建（需先配置 key.properties）
-.\gradlew.bat :app:assembleRelease
-
-# 发布 AAB（Google Play）
-.\gradlew.bat :app:bundleRelease
-
-# ADB 常用
-adb devices
-adb logcat -s SmbFileSource:D MainViewModel:D  # 查看 SMB 与 ViewModel 日志
-adb shell pm clear com.github.gbandszxc.goodtvplorer           # 清空应用数据
-adb uninstall com.github.gbandszxc.goodtvplorer                # 卸载
+# 安装 Debug 版本
+.\gradlew.bat :app:installDebug
 ```
 
-Release 构建默认启用 R8 代码压缩、混淆与资源压缩，并按 `armeabi-v7a`、`arm64-v8a` 输出独立 APK。发布后请保留 `app/build/outputs/mapping/release/mapping.txt`，用于还原线上崩溃堆栈。Debug 使用 `.debug` applicationId 后缀，可与 Release 同时安装。
+Debug 使用 `com.github.gbandszxc.goodtvplorer.debug` application ID，可与 Release 版本同时安装。Debug APK 位于 `app/build/outputs/apk/debug/`。
 
-> 提示：Windows 终端使用 PowerShell 时，反斜杠可省略为 `.\gradlew.bat`；若使用 Git Bash，可改用 `./gradlew`。
+Release 默认启用 R8 代码压缩、混淆和资源压缩，并按 ARM ABI 输出独立 APK：
+
+```powershell
+.\gradlew.bat :app:assembleRelease
+.\gradlew.bat :app:bundleRelease
+```
+
+发布后应妥善保存 `app/build/outputs/mapping/release/mapping.txt`，以便还原线上崩溃堆栈。
+
+## 使用说明
+
+1. 首次启动时允许应用读取媒体文件。
+2. 通过顶部 Dock 在本机和网络来源之间切换。
+3. 尚未配置网络来源时，选择“去配置”，或从左侧 Dock 打开连接管理。
+4. 从设置页调整字体缩放、查看缓存信息和项目版本。
 
 ## 项目结构
 
 ```text
-├── gradle.properties        # Gradle 共享配置（提交到仓库）
-├── app/
-│   ├── src/main/java/com/github/gbandszxc/goodtvplorer/
-│   │   ├── data/            # 文件源抽象、本地/SMB 实现、数据模型
-│   │   │   └── persistence/ # Room 数据库、DAO 与统一存储仓库
-│   │   ├── domain/          # 缩略图、缓存、文件类型识别、自定义 Coil Fetcher
-│   │   ├── ui/              # Compose 屏幕与组件、主题
-│   │   ├── viewmodel/       # MainViewModel、UI 状态与导航
-│   │   └── MainActivity.kt
-│   └── build.gradle.kts     # 应用模块构建配置
-├── build.gradle.kts         # 项目级插件配置
-├── gradle.properties        # Gradle JVM 与 Android 配置
-├── settings.gradle.kts      # 项目结构
-└── docs/
-    └── architecture.md      # 详细架构、已实现功能与后续计划
+app/src/main/java/com/github/gbandszxc/goodtvplorer/
+├── data/            文件源、SMB 实现与数据模型
+│   └── persistence/ Room 实体、DAO、迁移与 Repository
+├── domain/          缩略图、缓存、元数据与媒体适配
+├── ui/              Compose 屏幕、组件与主题
+├── viewmodel/       浏览、导航和预览状态
+├── MainActivity.kt
+├── ConnectionManagementActivity.kt
+└── SettingsActivity.kt
 ```
 
-## 了解更多
+实现细节、数据流和设计约束参见：
 
-想了解以下内容的实现细节，请参阅 [`docs/architecture.md`](docs/architecture.md)：
+- [`docs/architecture.md`](docs/architecture.md)：架构、持久化、SMB 与媒体实现
+- [`DESIGN.md`](DESIGN.md)：电视端 UI、焦点和交互规范
+- [`PRODUCT.md`](PRODUCT.md)：产品定位与设计原则
 
-- 统一文件源抽象 `FileSource`
-- SMB 连接复用、重试与流水线读取
-- 缩略图生成策略（EXIF 优先、降采样、并发锁）
-- 图片/视频/音频/文本预览实现
-- UI 导航与 D-pad 焦点系统
-- 完整已实现功能列表
+## 路线图
 
-## 后续计划
+当前重点包括：
 
-详见 [`docs/architecture.md#后续计划`](docs/architecture.md#后续计划)。
+1. 缓存容量上限与 LRU 治理；
+2. 使用 SAF / MediaStore 扩展本地文件访问；
+3. 复制、移动和删除等文件操作；
+4. 更多歌词、字幕格式及字幕轨选择；
+5. 扩充设备端回归测试。
 
-短期重点：SMB 密码加密、缓存上限与 LRU 清理、SAF/MediaStore 优先、SMB 连接编辑与删除。
-
-## 常见问题
-
-**Q：可以在普通 Android 手机上用吗？**
-A：可以安装运行。界面仍优先服务电视遥控器（D-pad 焦点、OK/Back 键），也已覆盖点击、滚动、媒体滑动切换和播放进度拖动等基础触屏操作。
-
-**Q：为什么首次启动要请求存储权限？**
-A：本地文件浏览需要读取设备上的图片、视频、音频和下载目录。
-
-**Q：SMB 密码安全吗？**
-A：当前 MVP 版本使用明文存储，建议只在私人可信设备使用。加密存储已列入开发计划。
-
-**Q：SMB 音视频播放会先下载完整文件吗？**
-A：不会。Media3 通过 `FileSource.readRange` 按需读取和跳转；仅旧的视频缩略图生成路径仍可能完整缓存文件。
-**Q：构建时报 JDK 相关错误怎么办？**
-A：检查 `local.properties` 中 `java.home` 是否指向本机 JDK 17 根目录，并确认该目录下有 `bin/java.exe`。
+详细说明参见 [`docs/architecture.md#路线图`](docs/architecture.md#路线图)。
 
 ## License
 

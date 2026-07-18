@@ -10,7 +10,7 @@
 3. UI、Activity、ViewModel、domain 层不得直接访问 Room DAO、SQLite、DataStore、SharedPreferences 或自行读写配置文件；只能调用 Repository。
 4. 不得新增 DataStore、SharedPreferences 或临时文件配置作为业务状态存储。缓存文件仍可使用 `cacheDir`，但不得承担配置、连接或导航恢复职责。
 5. 删除具有来源标识的业务实体时，必须在同一事务中清理其关联的持久化状态。
-6. 当前 SMB 密码在 SQLite 中仍为 MVP 明文。不得打印、记录或在错误信息中暴露密码；未来加密改造必须保留 Repository 接口稳定。
+6. SMB 密码必须以 Android Keystore 保护的密文保存到 SQLite，加解密只能在公共持久化层完成；不得打印、记录或在错误信息中暴露密码，密文格式演进必须提供 Room 迁移并保持 Repository 接口稳定。
 
 ## 交付要求
 
