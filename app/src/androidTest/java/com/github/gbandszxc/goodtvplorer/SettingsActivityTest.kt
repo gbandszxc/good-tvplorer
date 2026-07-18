@@ -1,5 +1,6 @@
 package com.github.gbandszxc.goodtvplorer
 
+import android.content.pm.PackageManager
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHasNoClickAction
@@ -36,6 +37,19 @@ class SettingsActivityTest {
         val insets = requireNotNull(ViewCompat.getRootWindowInsets(composeRule.activity.window.decorView))
 
         assertFalse(insets.isVisible(WindowInsetsCompat.Type.statusBars()))
+    }
+
+    @Test
+    fun everyActivityUsesFullscreenAppTheme() {
+        val activity = composeRule.activity
+        val activities = requireNotNull(
+            activity.packageManager
+                .getPackageInfo(activity.packageName, PackageManager.GET_ACTIVITIES)
+                .activities,
+        ).filter { it.name.startsWith("${MainActivity::class.java.packageName}.") }
+
+        assertTrue(activities.isNotEmpty())
+        assertTrue(activities.all { it.themeResource == R.style.AppTheme })
     }
 
     @Test
