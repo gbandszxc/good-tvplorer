@@ -4,7 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
@@ -13,13 +15,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -33,8 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,42 +90,111 @@ private fun ConnectionManagementScreen(
     var adding by remember { mutableStateOf(false) }
     var choosingProtocol by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<SmbConnectionInfo?>(null) }
-    Column(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(36.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    val groupShape = RoundedCornerShape(8.dp)
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(36.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("连接管理", modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "连接管理",
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+            )
             TvButton("添加网络地址", onClick = { choosingProtocol = true })
         }
         if (connections.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("当前暂无网络连接", color = Color(0xFFF3F7FA), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "当前暂无网络连接",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         } else {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 connections.forEach { connection ->
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 84.dp)
+                            .background(MaterialTheme.colorScheme.surface, groupShape)
+                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), groupShape)
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
                         Column(Modifier.weight(1f)) {
-                            Text(connection.name, color = Color(0xFFF3F7FA), fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
-                            Text("${connection.host}:${connection.port}/${connection.share}", color = Color(0xFFA8B8C7), fontSize = 18.sp)
+                            Text(
+                                connection.name,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "${connection.host}:${connection.port}/${connection.share}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 18.sp,
+                            )
                         }
-                        TvButton("编辑", onClick = { editing = connection })
-                        TvButton("删除", onClick = { deleting = connection })
+                        TvButton(
+                            "编辑",
+                            modifier = Modifier.width(112.dp),
+                            contentAlignment = Alignment.Center,
+                            onClick = { editing = connection },
+                        )
+                        TvButton(
+                            "删除",
+                            modifier = Modifier.width(112.dp),
+                            contentAlignment = Alignment.Center,
+                            destructive = true,
+                            onClick = { deleting = connection },
+                        )
                     }
                 }
             }
         }
     }
     if (choosingProtocol) {
-        AlertDialog(
+        ConnectionDialog(
             onDismissRequest = { choosingProtocol = false },
-            title = { Text("添加网络地址") },
-            text = {
-                TvButton("SMB", modifier = Modifier.fillMaxWidth()) {
-                    choosingProtocol = false
-                    adding = true
+            title = "添加网络地址",
+            content = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "选择网络协议。当前仅支持 SMB。",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 18.sp,
+                    )
+                    TvButton(
+                        "SMB",
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        choosingProtocol = false
+                        adding = true
+                    }
                 }
             },
             confirmButton = {},
-            dismissButton = { TvButton("取消") { choosingProtocol = false } },
+            dismissButton = {
+                TvButton(
+                    "取消",
+                    modifier = Modifier.width(112.dp),
+                    contentAlignment = Alignment.Center,
+                ) { choosingProtocol = false }
+            },
         )
     }
     if (adding || editing != null) {
@@ -128,12 +205,34 @@ private fun ConnectionManagementScreen(
         }
     }
     deleting?.let { connection ->
-        AlertDialog(
+        ConnectionDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("删除连接") },
-            text = { Text("确定删除“${connection.name}”吗？") },
-            confirmButton = { TvButton("删除") { onDelete(connection.id); deleting = null } },
-            dismissButton = { TvButton("取消") { deleting = null } },
+            title = "删除连接",
+            content = {
+                Text(
+                    "将删除“${connection.name}”，此操作无法撤销。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 18.sp,
+                )
+            },
+            confirmButton = {
+                TvButton(
+                    "删除",
+                    modifier = Modifier.width(112.dp),
+                    contentAlignment = Alignment.Center,
+                    destructive = true,
+                ) {
+                    onDelete(connection.id)
+                    deleting = null
+                }
+            },
+            dismissButton = {
+                TvButton(
+                    "取消",
+                    modifier = Modifier.width(112.dp),
+                    contentAlignment = Alignment.Center,
+                ) { deleting = null }
+            },
         )
     }
 }
@@ -152,30 +251,164 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
     fun Modifier.keepVisible(index: Int) = bringIntoViewRequester(fieldRequesters[index]).onFocusChanged {
         if (it.isFocused) scope.launch { fieldRequesters[index].bringIntoView() }
     }
-    AlertDialog(
+    ConnectionDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "新增 SMB" else "编辑 SMB") },
-        text = {
+        title = if (existing == null) "新增 SMB" else "编辑 SMB",
+        content = {
             Column(
                 Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth().keepVisible(0), label = { Text("名称") }, singleLine = true)
-                OutlinedTextField(host, { host = it }, modifier = Modifier.fillMaxWidth().keepVisible(1), label = { Text("Host") }, singleLine = true)
-                OutlinedTextField(port, { port = it }, modifier = Modifier.fillMaxWidth().keepVisible(2), label = { Text("Port") }, singleLine = true)
-                OutlinedTextField(share, { share = it }, modifier = Modifier.fillMaxWidth().keepVisible(3), label = { Text("Share") }, singleLine = true)
-                OutlinedTextField(user, { user = it }, modifier = Modifier.fillMaxWidth().keepVisible(4), label = { Text("用户名") }, singleLine = true)
-                OutlinedTextField(password, { password = it }, modifier = Modifier.fillMaxWidth().keepVisible(5), label = { Text("密码") }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-                OutlinedTextField(domain, { domain = it }, modifier = Modifier.fillMaxWidth().keepVisible(6), label = { Text("Domain，可选") }, singleLine = true)
+                Text(
+                    if (existing == null) {
+                        "填写 SMB 服务器信息，主机和共享目录为必填项。"
+                    } else {
+                        "修改已保存的网络连接信息。"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 18.sp,
+                )
+                SmbTextField(
+                    name,
+                    { name = it },
+                    "名称",
+                    Modifier.fillMaxWidth().keepVisible(0),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SmbTextField(
+                        host,
+                        { host = it },
+                        "主机",
+                        Modifier.weight(1f).keepVisible(1),
+                    )
+                    SmbTextField(
+                        port,
+                        { port = it },
+                        "端口",
+                        Modifier.width(128.dp).keepVisible(2),
+                    )
+                }
+                SmbTextField(
+                    share,
+                    { share = it },
+                    "共享目录",
+                    Modifier.fillMaxWidth().keepVisible(3),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SmbTextField(
+                        user,
+                        { user = it },
+                        "用户名",
+                        Modifier.weight(1f).keepVisible(4),
+                    )
+                    SmbTextField(
+                        password,
+                        { password = it },
+                        "密码",
+                        Modifier.weight(1f).keepVisible(5),
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                }
+                SmbTextField(
+                    domain,
+                    { domain = it },
+                    "域（可选）",
+                    Modifier.fillMaxWidth().keepVisible(6),
+                )
             }
         },
         confirmButton = {
-            TvButton("保存") {
-                if (host.isNotBlank() && share.isNotBlank()) {
-                    onSave(SmbConnectionInfo(existing?.id ?: UUID.randomUUID().toString(), name.ifBlank { host }, host, port.toIntOrNull() ?: 445, share, user, password, domain.ifBlank { null }))
-                }
+            TvButton(
+                "保存",
+                modifier = Modifier.width(112.dp),
+                enabled = host.isNotBlank() && share.isNotBlank(),
+                contentAlignment = Alignment.Center,
+            ) {
+                onSave(
+                    SmbConnectionInfo(
+                        existing?.id ?: UUID.randomUUID().toString(),
+                        name.ifBlank { host },
+                        host,
+                        port.toIntOrNull() ?: 445,
+                        share,
+                        user,
+                        password,
+                        domain.ifBlank { null },
+                    ),
+                )
             }
         },
-        dismissButton = { TvButton("取消", onClick = onDismiss) },
+        dismissButton = {
+            TvButton(
+                "取消",
+                modifier = Modifier.width(112.dp),
+                contentAlignment = Alignment.Center,
+                onClick = onDismiss,
+            )
+        },
+    )
+}
+
+@Composable
+private fun ConnectionDialog(
+    title: String,
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    dismissButton: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        modifier = Modifier.border(
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape,
+        ),
+        title = {
+            Text(
+                title,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = content,
+        confirmButton = confirmButton,
+        dismissButton = dismissButton,
+        shape = shape,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        tonalElevation = 0.dp,
+    )
+}
+
+@Composable
+private fun SmbTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        label = { Text(label, fontSize = 16.sp) },
+        singleLine = true,
+        visualTransformation = visualTransformation,
+        textStyle = TextStyle(fontSize = 20.sp),
+        shape = RoundedCornerShape(8.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+            focusedBorderColor = MaterialTheme.colorScheme.secondary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            focusedLabelColor = MaterialTheme.colorScheme.secondary,
+            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            cursorColor = MaterialTheme.colorScheme.secondary,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+        ),
     )
 }

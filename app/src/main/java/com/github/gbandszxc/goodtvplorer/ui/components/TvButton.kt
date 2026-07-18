@@ -48,27 +48,44 @@ fun TvButton(
     contentAlignment: Alignment = Alignment.CenterStart,
     contentDescription: String? = null,
     fontSize: TextUnit = 20.sp,
+    destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val isFocused = enabled && focused
+    val focusedBackground = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val focusedContent = if (destructive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary
+    val idleContent = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     val bg by animateColorAsState(
-        if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        if (isFocused) focusedBackground else MaterialTheme.colorScheme.surface,
         animationSpec = tween(160),
         label = "button-bg",
     )
     val fg by animateColorAsState(
-        if (enabled) if (isFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        if (enabled) {
+            if (isFocused) focusedContent else idleContent
+        } else {
+            idleContent.copy(alpha = 0.45f)
+        },
         animationSpec = tween(160),
         label = "button-fg",
     )
     val border by animateDpAsState(if (isFocused) 3.dp else 1.dp, animationSpec = tween(160), label = "button-border")
+    val borderColor by animateColorAsState(
+        when {
+            isFocused -> Color(0xFFFFE3A1)
+            destructive -> MaterialTheme.colorScheme.error.copy(alpha = 0.65f)
+            else -> MaterialTheme.colorScheme.outlineVariant
+        },
+        animationSpec = tween(160),
+        label = "button-border-color",
+    )
     Box(
         modifier = modifier
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
-            .border(BorderStroke(border, if (isFocused) Color(0xFFFFE3A1) else Color(0xFF26384B)), RoundedCornerShape(8.dp))
+            .border(BorderStroke(border, borderColor), RoundedCornerShape(8.dp))
             .onFocusChanged { focused = it.isFocused }
             .focusable(enabled)
             .tvOkClick(onClick = onClick, enabled = enabled, role = Role.Button)
