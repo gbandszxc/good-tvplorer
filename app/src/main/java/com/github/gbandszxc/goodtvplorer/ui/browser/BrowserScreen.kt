@@ -5,6 +5,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
@@ -24,8 +25,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -39,6 +40,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,8 +49,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -58,7 +61,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -74,6 +76,7 @@ import com.github.gbandszxc.goodtvplorer.data.FileKind
 import com.github.gbandszxc.goodtvplorer.domain.Formatters
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
 import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
+import com.github.gbandszxc.goodtvplorer.ui.main.MainFocusNavigation
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserState
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserPreviewMetadataState
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserSort
@@ -84,11 +87,13 @@ import com.github.gbandszxc.goodtvplorer.viewmodel.SortDirection
 import com.github.gbandszxc.goodtvplorer.viewmodel.filterAndSortBrowserItems
 import java.io.File
 
+private const val NavigateUpFocusKey = "\u0000navigate-up"
+
 @Composable
-fun BrowserScreen(
+internal fun BrowserScreen(
     path: String,
     canNavigateUp: Boolean,
-    contentAutoFocusEnabled: Boolean,
+    navigation: MainFocusNavigation,
     state: BrowserState,
     thumbnails: Map<String, File>,
     viewMode: BrowserViewMode,
@@ -108,7 +113,8 @@ fun BrowserScreen(
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
     var searchHasFocus by remember { mutableStateOf(false) }
-    var suppressContentAnchorFocus by remember(path) { mutableStateOf(false) }
+    var initialFocusConsumed by remember(path) { mutableStateOf(!navigation.contentInitialFocusAllowed) }
+    var focusedContentKey by remember(path) { mutableStateOf<String?>(null) }
     val searchableItems = searchItems ?: state.items
     val visibleItems = remember(searchableItems, searchQuery, sort) {
         filterAndSortBrowserItems(searchableItems, searchQuery, sort)
@@ -121,8 +127,18 @@ fun BrowserScreen(
         mutableStateOf(visibleItems.firstOrNull { it.handle.path == defaultFocusedPath })
     }
     val preview = focusedItem ?: visibleItems.firstOrNull()
-    val focusNavigateUp = contentAutoFocusEnabled && canNavigateUp && !state.loading && state.error == null && state.items.isEmpty() && !searchHasFocus
+    val validContentKeys = remember(visibleItems, canNavigateUp) {
+        buildSet {
+            if (canNavigateUp) add(NavigateUpFocusKey)
+            visibleItems.forEach { add(it.handle.path) }
+        }
+    }
+    val defaultContentKey = defaultFocusedPath ?: NavigateUpFocusKey.takeIf { canNavigateUp }
+    val contentEntryKey = focusedContentKey?.takeIf(validContentKeys::contains) ?: defaultContentKey
+    val contentAvailable = !state.loading && state.error == null && contentEntryKey != null
+    val shouldAutoFocusContent = contentAvailable && !initialFocusConsumed && !searchHasFocus
     val emptyDirectoryHint = if (canNavigateUp) "选择返回上一级，或刷新当前目录。" else "刷新当前目录以重新检查文件。"
+    SideEffect { navigation.contentAvailable = contentAvailable }
     LaunchedEffect(preview?.handle?.sourceKey, preview?.handle?.path) {
         preview?.let(onPreviewMetadataRequest)
     }
@@ -132,11 +148,11 @@ fun BrowserScreen(
             path,
             sort,
             searchQuery,
+            navigation,
             onOpenPath,
             onSortChange,
             onSearchQueryChange,
             onSearchFocusChange = { searchHasFocus = it },
-            onSearchMoveDown = { suppressContentAnchorFocus = true },
         )
         Row(
             Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = 16.dp),
@@ -146,35 +162,126 @@ fun BrowserScreen(
                 when {
                     state.loading -> LoadingPanel()
                     state.error != null -> MessagePanel("连接或读取失败", state.error, Color(0xFFFFA3A3))
-                    viewMode == BrowserViewMode.List -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    viewMode == BrowserViewMode.List -> {
+                        val totalItems = visibleItems.size + if (canNavigateUp) 1 else 0
+                        LazyColumn(
+                            modifier = Modifier.focusRestorer(fallback = navigation.content).focusGroup(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                         if (canNavigateUp) {
                             item(key = "navigate-up") {
-                                NavigateUpRow(initiallyFocused = focusNavigateUp, onClick = onNavigateUp)
+                                NavigateUpRow(
+                                    focusModifier = contentFocusModifier(
+                                        navigation = navigation,
+                                        attachEntryRequester = contentEntryKey == NavigateUpFocusKey,
+                                        up = navigation.toolbarTarget,
+                                        down = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
+                                        left = navigation.dockTarget(browserActionsVisible = true),
+                                        right = FocusRequester.Cancel,
+                                        onFocused = {
+                                            focusedContentKey = NavigateUpFocusKey
+                                            navigation.focusContent()
+                                        },
+                                    ),
+                                    initiallyFocused = shouldAutoFocusContent && contentEntryKey == NavigateUpFocusKey,
+                                    onInitialFocus = { initialFocusConsumed = true },
+                                    onClick = onNavigateUp,
+                                )
                             }
                         }
                         when {
                             state.items.isEmpty() -> item { InlineMessage("目录为空", emptyDirectoryHint) }
                             visibleItems.isEmpty() && searchLoading -> item { InlineMessage("正在递归搜索", "正在检索当前目录及其子目录。") }
                             visibleItems.isEmpty() -> item { InlineMessage("未找到匹配项目", "尝试修改搜索词。") }
-                            else -> items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                                FileRow(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = contentAutoFocusEnabled && !searchHasFocus && !suppressContentAnchorFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            else -> itemsIndexed(visibleItems, key = { _, item -> item.handle.sourceKey + item.handle.path }) { index, item ->
+                                val position = index + if (canNavigateUp) 1 else 0
+                                FileRow(
+                                    item,
+                                    thumbnails[MainViewModel.thumbKey(item)],
+                                    onThumbnailVisible,
+                                    onThumbnailHidden,
+                                    focusModifier = contentFocusModifier(
+                                        navigation = navigation,
+                                        attachEntryRequester = contentEntryKey == item.handle.path,
+                                        up = if (position == 0) navigation.toolbarTarget else FocusRequester.Default,
+                                        down = if (position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
+                                        left = navigation.dockTarget(browserActionsVisible = true),
+                                        right = FocusRequester.Cancel,
+                                        onFocused = {
+                                            focusedContentKey = item.handle.path
+                                            navigation.focusContent()
+                                        },
+                                    ),
+                                    initiallyFocused = shouldAutoFocusContent && contentEntryKey == item.handle.path,
+                                    onInitialFocus = { initialFocusConsumed = true },
+                                    onFocus = { focusedItem = item },
+                                    onClick = { onOpen(item) },
+                                )
                             }
                         }
                     }
-                    else -> LazyVerticalGrid(columns = GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    }
+                    else -> {
+                        val totalItems = visibleItems.size + if (canNavigateUp) 1 else 0
+                        val lastRowStart = if (totalItems == 0) 0 else ((totalItems - 1) / 4) * 4
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(4),
+                            modifier = Modifier.focusRestorer(fallback = navigation.content).focusGroup(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
                         if (canNavigateUp) {
                             item(key = "navigate-up") {
-                                NavigateUpTile(initiallyFocused = focusNavigateUp, onClick = onNavigateUp)
+                                NavigateUpTile(
+                                    focusModifier = contentFocusModifier(
+                                        navigation = navigation,
+                                        attachEntryRequester = contentEntryKey == NavigateUpFocusKey,
+                                        up = navigation.toolbarTarget,
+                                        down = if (lastRowStart == 0) FocusRequester.Cancel else FocusRequester.Default,
+                                        left = navigation.dockTarget(browserActionsVisible = true),
+                                        right = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
+                                        onFocused = {
+                                            focusedContentKey = NavigateUpFocusKey
+                                            navigation.focusContent()
+                                        },
+                                    ),
+                                    initiallyFocused = shouldAutoFocusContent && contentEntryKey == NavigateUpFocusKey,
+                                    onInitialFocus = { initialFocusConsumed = true },
+                                    onClick = onNavigateUp,
+                                )
                             }
                         }
                         when {
                             state.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("目录为空", emptyDirectoryHint) }
                             visibleItems.isEmpty() && searchLoading -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("正在递归搜索", "正在检索当前目录及其子目录。") }
                             visibleItems.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("未找到匹配项目", "尝试修改搜索词。") }
-                            else -> items(visibleItems, key = { it.handle.sourceKey + it.handle.path }) { item ->
-                                FileTile(item, thumbnails[MainViewModel.thumbKey(item)], onThumbnailVisible, onThumbnailHidden, initiallyFocused = contentAutoFocusEnabled && !searchHasFocus && !suppressContentAnchorFocus && item.handle.path == defaultFocusedPath, onFocus = { focusedItem = item }, onClick = { onOpen(item) })
+                            else -> itemsIndexed(visibleItems, key = { _, item -> item.handle.sourceKey + item.handle.path }) { index, item ->
+                                val position = index + if (canNavigateUp) 1 else 0
+                                FileTile(
+                                    item,
+                                    thumbnails[MainViewModel.thumbKey(item)],
+                                    onThumbnailVisible,
+                                    onThumbnailHidden,
+                                    focusModifier = contentFocusModifier(
+                                        navigation = navigation,
+                                        attachEntryRequester = contentEntryKey == item.handle.path,
+                                        up = if (position < 4) navigation.toolbarTarget else FocusRequester.Default,
+                                        down = if (position >= lastRowStart) FocusRequester.Cancel else FocusRequester.Default,
+                                        left = if (position % 4 == 0) navigation.dockTarget(browserActionsVisible = true) else FocusRequester.Default,
+                                        right = if (position % 4 == 3 || position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
+                                        onFocused = {
+                                            focusedContentKey = item.handle.path
+                                            navigation.focusContent()
+                                        },
+                                    ),
+                                    initiallyFocused = shouldAutoFocusContent && contentEntryKey == item.handle.path,
+                                    onInitialFocus = { initialFocusConsumed = true },
+                                    onFocus = { focusedItem = item },
+                                    onClick = { onOpen(item) },
+                                )
                             }
                         }
+                    }
                     }
                 }
             }
@@ -188,43 +295,69 @@ private fun BrowserToolbar(
     path: String,
     sort: BrowserSort,
     searchQuery: String,
+    navigation: MainFocusNavigation,
     onOpenPath: (String) -> Unit,
     onSortChange: (BrowserSort) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onSearchFocusChange: (Boolean) -> Unit,
-    onSearchMoveDown: () -> Unit,
 ) {
     var editing by remember(path) { mutableStateOf(false) }
     var enteredPath by remember(path) { mutableStateOf(path) }
+    var restorePathFocus by remember { mutableStateOf(false) }
     val inputFocusRequester = remember { FocusRequester() }
     val displayPath = if (path.isBlank()) "/" else path
 
     fun submitPath() {
         editing = false
+        restorePathFocus = true
         onOpenPath(enteredPath)
     }
 
     BackHandler(enabled = editing || searchQuery.isNotBlank()) {
-        if (editing) editing = false else onSearchQueryChange("")
+        if (editing) {
+            editing = false
+            restorePathFocus = true
+        } else {
+            onSearchQueryChange("")
+        }
     }
-    LaunchedEffect(editing) {
-        if (editing) inputFocusRequester.requestFocus()
+    LaunchedEffect(editing, restorePathFocus) {
+        when {
+            editing -> inputFocusRequester.requestFocus()
+            restorePathFocus -> {
+                navigation.path.requestFocus()
+                restorePathFocus = false
+            }
+        }
     }
 
     Row(
-        Modifier.fillMaxWidth().height(48.dp),
+        Modifier.fillMaxWidth().height(48.dp)
+            .focusRestorer(fallback = navigation.path)
+            .focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SortMenuButton(sort, onSortChange)
+        SortMenuButton(sort, navigation, onSortChange)
         Row(
             Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26)).padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PathEditButton(onClick = {
-                enteredPath = path
-                editing = true
-            })
+            PathEditButton(
+                modifier = Modifier
+                    .focusProperties {
+                        up = navigation.selectedSource
+                        down = navigation.contentTarget
+                        left = navigation.sort
+                        right = navigation.search
+                    }
+                    .focusRequester(navigation.path)
+                    .onFocusChanged { if (it.isFocused) navigation.focusToolbar(navigation.path) },
+                onClick = {
+                    enteredPath = path
+                    editing = true
+                },
+            )
             Spacer(Modifier.width(12.dp))
             if (editing) {
                 BasicTextField(
@@ -246,16 +379,43 @@ private fun BrowserToolbar(
                 Text(displayPath, modifier = Modifier.weight(1f), color = Color(0xFF9FB0C2), fontSize = 20.sp, maxLines = 1)
             }
         }
-        SearchField(searchQuery, onSearchQueryChange, onSearchFocusChange, onSearchMoveDown)
+        SearchField(searchQuery, navigation, onSearchQueryChange, onSearchFocusChange)
     }
 }
 
 @Composable
-private fun SortMenuButton(sort: BrowserSort, onSortChange: (BrowserSort) -> Unit) {
+private fun SortMenuButton(sort: BrowserSort, navigation: MainFocusNavigation, onSortChange: (BrowserSort) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    var restoreFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(expanded, restoreFocus) {
+        if (!expanded && restoreFocus) {
+            navigation.sort.requestFocus()
+            restoreFocus = false
+        }
+    }
     Box {
-        ToolbarIconButton(R.drawable.ic_sort, "排序", onClick = { expanded = true })
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.background(Color(0xFF152232))) {
+        ToolbarIconButton(
+            R.drawable.ic_sort,
+            "排序",
+            modifier = Modifier
+                .focusProperties {
+                    up = navigation.selectedSource
+                    down = navigation.contentTarget
+                    left = navigation.dockTarget(browserActionsVisible = true)
+                    right = navigation.path
+                }
+                .focusRequester(navigation.sort)
+                .onFocusChanged { if (it.isFocused) navigation.focusToolbar(navigation.sort) },
+            onClick = { expanded = true },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = {
+                expanded = false
+                restoreFocus = true
+            },
+            modifier = Modifier.background(Color(0xFF152232)),
+        ) {
             sortOptions.forEach { option ->
                 val selected = option == sort
                 DropdownMenuItem(
@@ -267,7 +427,11 @@ private fun SortMenuButton(sort: BrowserSort, onSortChange: (BrowserSort) -> Uni
                             Text(option.directionArrow(), color = if (selected) Color(0xFFFFC857) else Color(0xFFA8B8C7), fontSize = 22.sp)
                         }
                     },
-                    onClick = { onSortChange(option); expanded = false },
+                    onClick = {
+                        onSortChange(option)
+                        expanded = false
+                        restoreFocus = true
+                    },
                     modifier = Modifier.semantics { contentDescription = option.label() },
                 )
             }
@@ -278,12 +442,11 @@ private fun SortMenuButton(sort: BrowserSort, onSortChange: (BrowserSort) -> Uni
 @Composable
 private fun SearchField(
     query: String,
+    navigation: MainFocusNavigation,
     onQueryChange: (String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
-    onMoveDown: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
     val border = if (focused) Color(0xFFFFE3A1) else Color.Transparent
     Row(
         Modifier.width(240.dp).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26))
@@ -295,19 +458,27 @@ private fun SearchField(
         BasicTextField(
             value = query,
             onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f).onFocusChanged {
+            modifier = Modifier.weight(1f)
+                .focusProperties {
+                    up = navigation.selectedSource
+                    down = navigation.contentTarget
+                    left = navigation.path
+                    right = FocusRequester.Cancel
+                }
+                .focusRequester(navigation.search)
+                .onFocusChanged {
                 focused = it.isFocused
                 onFocusChange(it.isFocused)
+                if (it.isFocused) navigation.focusToolbar(navigation.search)
             }.onPreviewKeyEvent {
                 if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (it.key) {
                     Key.DirectionUp -> {
-                        focusManager.moveFocus(FocusDirection.Up)
+                        navigation.selectedSource.requestFocus()
                         true
                     }
                     Key.DirectionDown -> {
-                        onMoveDown()
-                        focusManager.moveFocus(FocusDirection.Down)
+                        if (navigation.contentAvailable) navigation.content.requestFocus()
                         true
                     }
                     else -> false
@@ -327,12 +498,12 @@ private fun SearchField(
 }
 
 @Composable
-private fun ToolbarIconButton(iconRes: Int, description: String, onClick: () -> Unit) {
+private fun ToolbarIconButton(iconRes: Int, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color(0xFF101A26), label = "$description-background")
     val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "$description-tint")
     Box(
-        Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(background)
+        modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(background)
             .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent), RoundedCornerShape(10.dp))
             .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
             .semantics { contentDescription = description },
@@ -368,12 +539,12 @@ private fun BrowserSort.iconRes(): Int = when (field) {
 }
 
 @Composable
-private fun PathEditButton(onClick: () -> Unit) {
+private fun PathEditButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color.Transparent, label = "path-edit-background")
     val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "path-edit-tint")
     Box(
-        Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(background)
+        modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(background)
             .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent), RoundedCornerShape(6.dp))
             .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
             .semantics { contentDescription = "编辑路径" },
@@ -383,9 +554,37 @@ private fun PathEditButton(onClick: () -> Unit) {
     }
 }
 
+private fun contentFocusModifier(
+    navigation: MainFocusNavigation,
+    attachEntryRequester: Boolean,
+    up: FocusRequester,
+    down: FocusRequester,
+    left: FocusRequester,
+    right: FocusRequester,
+    onFocused: () -> Unit,
+): Modifier = Modifier
+    .focusProperties {
+        this.up = up
+        this.down = down
+        this.left = left
+        this.right = right
+    }
+    .then(if (attachEntryRequester) Modifier.focusRequester(navigation.content) else Modifier)
+    .onFocusChanged { if (it.isFocused) onFocused() }
+
 @Composable
-private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, initiallyFocused: Boolean, onFocus: () -> Unit, onClick: () -> Unit) {
-    FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus, onClick) { focused ->
+private fun FileRow(
+    item: FileItem,
+    thumbnail: File?,
+    onThumbnailVisible: (FileItem) -> Unit,
+    onThumbnailHidden: (FileItem) -> Unit,
+    focusModifier: Modifier,
+    initiallyFocused: Boolean,
+    onInitialFocus: () -> Unit,
+    onFocus: () -> Unit,
+    onClick: () -> Unit,
+) {
+    FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus, onClick) { focused ->
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             MediaThumb(item, thumbnail, Modifier.size(48.dp), onThumbnailVisible, onThumbnailHidden)
             Column(Modifier.weight(1f)) {
@@ -398,8 +597,8 @@ private fun FileRow(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileI
 }
 
 @Composable
-private fun NavigateUpRow(initiallyFocused: Boolean, onClick: () -> Unit) {
-    FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus = {}, onClick = onClick) { focused ->
+private fun NavigateUpRow(focusModifier: Modifier, initiallyFocused: Boolean, onInitialFocus: () -> Unit, onClick: () -> Unit) {
+    FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus = {}, onClick = onClick) { focused ->
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(painterResource(R.drawable.ic_back), contentDescription = null, tint = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), modifier = Modifier.size(48.dp))
             Text("返回上一级", color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
@@ -408,8 +607,8 @@ private fun NavigateUpRow(initiallyFocused: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun NavigateUpTile(initiallyFocused: Boolean, onClick: () -> Unit) {
-    FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus = {}, onClick = onClick) { focused ->
+private fun NavigateUpTile(focusModifier: Modifier, initiallyFocused: Boolean, onInitialFocus: () -> Unit, onClick: () -> Unit) {
+    FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus = {}, onClick = onClick) { focused ->
         GridTileContent(focused, "返回上一级") { modifier ->
             Box(modifier.clip(RoundedCornerShape(8.dp)).background(if (focused) Color(0xFFE7B94F) else Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
                 Icon(painterResource(R.drawable.ic_back), contentDescription = null, tint = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), modifier = Modifier.size(34.dp))
@@ -431,8 +630,18 @@ private fun InlineMessage(title: String, body: String) {
 }
 
 @Composable
-private fun FileTile(item: FileItem, thumbnail: File?, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, initiallyFocused: Boolean, onFocus: () -> Unit, onClick: () -> Unit) {
-    FocusSurface(Modifier.fillMaxWidth(), initiallyFocused, onFocus, onClick) { focused ->
+private fun FileTile(
+    item: FileItem,
+    thumbnail: File?,
+    onThumbnailVisible: (FileItem) -> Unit,
+    onThumbnailHidden: (FileItem) -> Unit,
+    focusModifier: Modifier,
+    initiallyFocused: Boolean,
+    onInitialFocus: () -> Unit,
+    onFocus: () -> Unit,
+    onClick: () -> Unit,
+) {
+    FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus, onClick) { focused ->
         GridTileContent(focused, item.name) { modifier ->
             MediaThumb(item, thumbnail, modifier, onThumbnailVisible, onThumbnailHidden)
         }
@@ -458,13 +667,20 @@ private fun GridTileContent(focused: Boolean, title: String, media: @Composable 
 }
 
 @Composable
-private fun FocusSurface(modifier: Modifier, initiallyFocused: Boolean, onFocus: () -> Unit, onClick: () -> Unit, content: @Composable (Boolean) -> Unit) {
+private fun FocusSurface(
+    modifier: Modifier,
+    initiallyFocused: Boolean,
+    onInitialFocus: () -> Unit,
+    onFocus: () -> Unit,
+    onClick: () -> Unit,
+    content: @Composable (Boolean) -> Unit,
+) {
     var focused by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val bg by animateColorAsState(if (focused) Color(0xFFFFC857) else Color(0xFF152232), label = "focus-bg")
     val border = if (focused) Color(0xFFFFE3A1) else Color(0xFF24364A)
     LaunchedEffect(initiallyFocused) {
-        if (initiallyFocused) focusRequester.requestFocus()
+        if (initiallyFocused && focusRequester.requestFocus()) onInitialFocus()
     }
     Box(
         modifier.clip(RoundedCornerShape(10.dp))

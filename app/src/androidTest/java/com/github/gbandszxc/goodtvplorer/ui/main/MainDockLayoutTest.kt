@@ -9,6 +9,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performSemanticsAction
@@ -48,17 +50,107 @@ class MainDockLayoutTest {
         confirmAndAssertFocused("返回上级", "返回上级")
     }
 
-    private fun setBrowserContent() {
+    @Test
+    fun listItemMovesUpThroughToolbarToSelectedSource() {
+        setBrowserContent(BrowserViewMode.List, canNavigateUp = false)
+
+        composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_UP)
+        composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_UP)
+        composeRule.onNodeWithContentDescription("本机").assertIsFocused()
+    }
+
+    @Test
+    fun gridFirstRowAlwaysMovesUpToToolbar() {
+        setBrowserContent(BrowserViewMode.Grid, canNavigateUp = false, itemCount = 4)
+
+        repeat(4) { index ->
+            composeRule.onNode(hasText("folder-$index") and hasClickAction())
+                .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+            pressKey(KeyEvent.KEYCODE_DPAD_UP)
+            composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+        }
+    }
+
+    @Test
+    fun dockMovesVerticallyAndReturnsToLastContentItem() {
+        setBrowserContent(BrowserViewMode.Grid, canNavigateUp = false)
+        composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
+
+        pressKey(KeyEvent.KEYCODE_DPAD_LEFT)
+        composeRule.onNodeWithContentDescription("切换为列表视图").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNodeWithContentDescription("刷新").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNodeWithContentDescription("返回上级").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNodeWithContentDescription("连接管理").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNodeWithContentDescription("设置").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
+    }
+
+    @Test
+    fun networkSourceMovesDownToConfigurationAndLeftToDock() {
+        setNetworkHub()
+
+        composeRule.onNodeWithContentDescription("网络")
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNode(hasText("去配置") and hasClickAction()).assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_UP)
+        composeRule.onNodeWithContentDescription("网络").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        pressKey(KeyEvent.KEYCODE_DPAD_LEFT)
+        composeRule.onNodeWithContentDescription("连接管理").assertIsFocused()
+    }
+
+    @Test
+    fun toolbarMovesInFixedHorizontalOrderAndUpToSource() {
+        setBrowserContent(BrowserViewMode.List, canNavigateUp = false)
+        composeRule.onNodeWithContentDescription("编辑路径")
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+
+        pressKey(KeyEvent.KEYCODE_DPAD_LEFT)
+        composeRule.onNodeWithContentDescription("排序").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNodeWithContentDescription("搜索当前目录").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_UP)
+        composeRule.onNodeWithContentDescription("本机").assertIsFocused()
+    }
+
+    @Test
+    fun toolbarDownStaysPutWhenDirectoryHasNoFocusableContent() {
+        setBrowserContent(BrowserViewMode.List, canNavigateUp = false, itemCount = 0)
+        composeRule.onNodeWithContentDescription("编辑路径")
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+            .assertIsFocused()
+
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+    }
+
+    private fun setBrowserContent(
+        initialViewMode: BrowserViewMode = BrowserViewMode.Grid,
+        canNavigateUp: Boolean = true,
+        itemCount: Int = 1,
+    ) {
         composeRule.setContent {
-            var viewMode by remember { mutableStateOf(BrowserViewMode.Grid) }
+            var viewMode by remember { mutableStateOf(initialViewMode) }
             var contentGeneration by remember { mutableIntStateOf(0) }
-            val item = FileItem(
-                name = "folder",
-                handle = FileHandle("local", SourceKind.Local, "folder-$contentGeneration"),
-                kind = FileKind.Directory,
-                size = null,
-                modifiedAtMillis = null,
-            )
+            val items = List(itemCount) { index ->
+                FileItem(
+                    name = "folder-$index",
+                    handle = FileHandle("local", SourceKind.Local, "folder-$contentGeneration-$index"),
+                    kind = FileKind.Directory,
+                    size = null,
+                    modifiedAtMillis = null,
+                )
+            }
 
             TvTheme {
                 MainDockLayout(
@@ -76,13 +168,13 @@ class MainDockLayoutTest {
                     },
                     onRefresh = { contentGeneration++ },
                     onBack = { contentGeneration++ },
-                ) { contentAutoFocusEnabled ->
+                ) { focusNavigation ->
                     key(contentGeneration) {
                         BrowserScreen(
                             path = "folder",
-                            canNavigateUp = true,
-                            contentAutoFocusEnabled = contentAutoFocusEnabled,
-                            state = BrowserState(items = listOf(item)),
+                            canNavigateUp = canNavigateUp,
+                            navigation = focusNavigation,
+                            state = BrowserState(items = items),
                             thumbnails = emptyMap(),
                             viewMode = viewMode,
                             sort = BrowserSort(),
@@ -106,11 +198,43 @@ class MainDockLayoutTest {
         }
     }
 
+    private fun setNetworkHub() {
+        composeRule.setContent {
+            TvTheme {
+                MainDockLayout(
+                    networkSelected = true,
+                    showNetworkHub = true,
+                    connections = emptyList(),
+                    onLocal = {},
+                    onNetwork = {},
+                    onOpenSmb = {},
+                    onConnections = {},
+                    onSettings = {},
+                    browserViewMode = null,
+                    onToggleView = {},
+                    onRefresh = {},
+                    onBack = {},
+                ) {}
+            }
+        }
+    }
+
     private fun confirmAndAssertFocused(before: String, after: String) {
-        composeRule.onNodeWithContentDescription(before)
+        val stepsFromViewToggle = when (before) {
+            "刷新" -> 1
+            "返回上级" -> 2
+            else -> 0
+        }
+        composeRule.onNodeWithContentDescription(if (stepsFromViewToggle == 0) before else "切换为列表视图")
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
-            .assertIsFocused()
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        repeat(stepsFromViewToggle) { pressKey(KeyEvent.KEYCODE_DPAD_DOWN) }
+        composeRule.onNodeWithContentDescription(before).assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_CENTER)
         composeRule.onNodeWithContentDescription(after).assertIsFocused()
+    }
+
+    private fun pressKey(keyCode: Int) {
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(keyCode)
+        composeRule.waitForIdle()
     }
 }
