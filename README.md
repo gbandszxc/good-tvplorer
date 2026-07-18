@@ -4,123 +4,69 @@
   <img src="docs/raw/icon/raw_icon.png" width="200" alt="Good TVplorer">
 </p>
 
-Good TVplorer 是面向 Android TV、电视盒子和投影设备的遥控器优先文件浏览器，用于统一访问本地存储与 SMB / NAS 媒体库。
+<p align="center">
+  为 Android TV、电视盒子和投影设备设计的遥控器文件浏览器
+</p>
 
-![Kotlin](https://img.shields.io/badge/Kotlin-2.3.10-7F52FF?logo=kotlin)
-![AGP](https://img.shields.io/badge/AGP-9.2.1-3DDC84?logo=android)
-![minSdk](https://img.shields.io/badge/minSdk-23-3DDC84)
-![targetSdk](https://img.shields.io/badge/targetSdk-36-3DDC84)
+Good TVplorer 让你在电视上用同一套操作浏览本机文件和 SMB / NAS 媒体库，无需鼠标，也无需在多个应用之间切换。
 
-## 核心能力
+![Good TVplorer 文件浏览页](docs/pics/file-browser.png)
 
-- **电视端交互**：提供 Leanback 启动入口、完整 D-pad 焦点导航、OK / Back 键操作和基础触屏兼容。
-- **统一文件浏览**：以 Android 主要共享存储为本机根目录，使用同一套列表、网格和快速预览界面访问本地目录与 SMB 共享。
-- **SMB 连接管理**：支持新增、编辑和删除连接，配置 Host、Port、Share、用户名、密码与 Domain。
-- **网络读取优化**：复用 SMB 会话，支持失效重连、单次重试、范围读取和大文件流水线复制。
-- **媒体预览**：支持图片浏览、音频播放与 LRC 歌词、视频播放与 SRT / 内嵌字幕、文本行号与翻页。
-- **状态恢复**：使用 Room 保存显示设置、最近目录和 D-pad 焦点锚点。
+## 你可以用它做什么
 
-## 安全与数据
+- **用遥控器浏览文件**：支持方向键移动焦点、OK 打开和 Back 返回，也兼容触屏操作。
+- **连接家中的 NAS**：保存并管理多个 SMB 共享，在本机存储与网络来源之间快速切换。
+- **快速找到文件**：递归搜索当前目录及子目录，并按名称、大小或修改时间排序。
+- **直接预览常用媒体**：查看图片和文本，播放音频与视频。
+- **获得更完整的播放体验**：支持 LRC 歌词、SRT / 内嵌字幕、播放进度与倍速控制。
+- **回到上次浏览位置**：重新打开应用或切换来源后，可恢复最近目录和目录焦点。
+- **选择喜欢的浏览方式**：在列表与网格视图之间切换，并调整全局字体大小。
 
-SMB 密码在写入 Room / SQLite 前使用 AES-256-GCM 加密，密钥由 Android Keystore 生成并保存在当前设备。每条密文使用独立随机 IV，并绑定对应的连接 ID；从旧版本升级时，已有明文密码会在数据库迁移中自动转换。
-
-`good_tvplorer.db` 已从 Android 云备份和设备间迁移中排除，因此 SMB 连接、显示设置与浏览恢复状态不会自动转移到新设备。应用建立 SMB 会话时仍需在进程内临时解密密码；该机制用于降低数据库被离线复制后的凭据暴露风险，不能替代可信设备、系统锁屏和操作系统安全更新。
-
-应用不会主动记录密码，相关错误信息也不包含凭据内容。
-
-## 运行环境
-
-### 目标设备
+## 使用前准备
 
 - Android TV、电视盒子或投影设备
 - Android 6.0（API 23）及以上
-- `armeabi-v7a` 或 `arm64-v8a`
-- 遥控器 / D-pad；触屏为兼容输入方式
+- `armeabi-v7a` 或 `arm64-v8a` 设备
+- 遥控器或 D-pad
+- 如需访问 NAS：准备好 SMB 地址、共享名称和登录信息
 
-### 开发环境
+## 安装与上手
 
-- Windows PowerShell
-- JDK 17
-- Android SDK API 36
-- Android Studio，或项目内置的 Gradle Wrapper
+项目当前尚未发布预编译 APK。请先按[构建说明](docs/architecture.md#构建与验证)生成 Debug APK，并安装到设备。
 
-在项目根目录创建已被 Git 忽略的 `local.properties`：
+1. 首次启动时，根据系统提示授予媒体文件访问权限。
+2. 使用顶部 Dock 在“本机”和“网络”之间切换。
+3. 首次使用网络来源时，打开连接管理并填写 Host、Port、Share、用户名、密码与 Domain。
+4. 聚焦文件后按 OK 打开；按 Back 返回上一级或退出预览。
 
-```properties
-sdk.dir=C\:\\path\\to\\Android\\Sdk
-java.home=C\:\\path\\to\\jdk-17
-```
+Android 14 及以上可能要求你选择允许访问的照片和视频范围。应用只能显示系统已授权的内容。
 
-发布构建还需要在 `key.properties` 中提供签名配置。不要提交本机路径、密码或签名文件。
+## 支持的预览
 
-## 构建与验证
+| 类型 | 可用功能 |
+| --- | --- |
+| 图片 | 全屏查看、同目录图片切换、缩略图胶卷 |
+| 视频 | 本机 / SMB 流式播放、字幕、倍速、进度与画面模式 |
+| 音频 | 本机 / SMB 流式播放、内嵌封面、同名 LRC 歌词 |
+| 文本 | UTF-8 文本、行号、自动换行和遥控器翻页 |
 
-```powershell
-# Debug APK
-.\gradlew.bat :app:assembleDebug
+## 当前限制
 
-# JVM 单元测试
-.\gradlew.bat :app:testDebugUnitTest
+- 当前以浏览和预览为主，暂不支持复制、移动或删除文件。
+- 本地文件的可见范围受 Android 系统权限限制。
+- 视频缩略图依赖设备的系统媒体解析能力，部分格式可能无法生成或加载较慢。
+- 歌词和外挂字幕需与媒体文件同名并放在同一目录。
+- 媒体能否播放还取决于设备支持的音视频编码。
 
-# 已连接设备上的 instrumentation 测试
-.\gradlew.bat :app:connectedDebugAndroidTest
+## 参与开发
 
-# Android Lint
-.\gradlew.bat :app:lintDebug
+构建、测试、项目结构、数据流与实现约束统一记录在
+[`docs/architecture.md`](docs/architecture.md)。
 
-# 安装 Debug 版本
-.\gradlew.bat :app:installDebug
-```
-
-Debug 使用 `com.github.gbandszxc.goodtvplorer.debug` application ID，可与 Release 版本同时安装。Debug APK 位于 `app/build/outputs/apk/debug/`。
-
-Release 默认启用 R8 代码压缩、混淆和资源压缩，并按 ARM ABI 输出独立 APK：
-
-```powershell
-.\gradlew.bat :app:assembleRelease
-.\gradlew.bat :app:bundleRelease
-```
-
-发布后应妥善保存 `app/build/outputs/mapping/release/mapping.txt`，以便还原线上崩溃堆栈。
-
-## 使用说明
-
-1. 首次启动时允许应用读取媒体文件；Android 14 及以上可授予完整或部分照片 / 视频访问。
-2. 通过顶部 Dock 在本机和网络来源之间切换。
-3. 尚未配置网络来源时，选择“去配置”，或从左侧 Dock 打开连接管理。
-4. 从设置页调整字体缩放、查看缓存信息和项目版本。
-
-## 项目结构
-
-```text
-app/src/main/java/com/github/gbandszxc/goodtvplorer/
-├── data/            文件源、SMB 实现与数据模型
-│   └── persistence/ Room 实体、DAO、迁移与 Repository
-├── domain/          缩略图、缓存、元数据与媒体适配
-├── ui/              Compose 屏幕、组件与主题
-├── viewmodel/       浏览、导航和预览状态
-├── MainActivity.kt
-├── ConnectionManagementActivity.kt
-└── SettingsActivity.kt
-```
-
-实现细节、数据流和设计约束参见：
-
-- [`docs/architecture.md`](docs/architecture.md)：架构、持久化、SMB 与媒体实现
-- [`DESIGN.md`](DESIGN.md)：电视端 UI、焦点和交互规范
+- [`DESIGN.md`](DESIGN.md)：电视端 UI、焦点与交互规范
 - [`PRODUCT.md`](PRODUCT.md)：产品定位与设计原则
 
-## 路线图
-
-当前重点包括：
-
-1. 缓存容量上限与 LRU 治理；
-2. 使用 SAF / MediaStore 扩展本地文件访问；
-3. 复制、移动和删除等文件操作；
-4. 更多歌词、字幕格式及字幕轨选择；
-5. 扩充设备端回归测试。
-
-详细说明参见 [`docs/architecture.md#路线图`](docs/architecture.md#路线图)。
+欢迎通过 [Issue](https://github.com/gbandszxc/good-tvplorer/issues) 反馈问题或建议，也欢迎提交 Pull Request。
 
 ## License
 
