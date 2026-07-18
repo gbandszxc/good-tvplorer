@@ -259,6 +259,7 @@ private fun SettingsMenuItem(
             )
             .then(if (rightFocus == null) Modifier else Modifier.focusProperties { right = rightFocus })
             .onFocusChanged { focused = it.isFocused }
+            .focusable()
             .tvTabClick(selected = selected, onClick = onClick)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
