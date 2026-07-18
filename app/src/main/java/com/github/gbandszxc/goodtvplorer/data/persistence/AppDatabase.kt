@@ -1,6 +1,7 @@
 package com.github.gbandszxc.goodtvplorer.data.persistence
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -25,7 +26,7 @@ data class SmbConnectionEntity(
     val port: Int,
     val share: String,
     val username: String,
-    val password: String,
+    @ColumnInfo(name = "password") val encryptedPassword: String,
     val domain: String?,
 )
 
@@ -103,7 +104,7 @@ interface BrowserNavigationDao {
 
 @Database(
     entities = [SmbConnectionEntity::class, AppPreferenceEntity::class, BrowserLocationEntity::class, BrowserFocusAnchorEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -117,21 +118,28 @@ object AppDatabaseProvider {
 
     fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
         instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "good_tvplorer.db")
+            .addMigrations(MIGRATION_1_2)
+            .addCallback(SmbCredentialMigrationCleanup)
             .build()
             .also { instance = it }
     }
 }
 
-class SmbConnectionRepository internal constructor(private val database: AppDatabase) {
+class SmbConnectionRepository internal constructor(
+    private val database: AppDatabase,
+    private val credentialCipher: SmbCredentialCipher = SmbCredentialCipher(),
+) {
     constructor(context: Context) : this(AppDatabaseProvider.get(context))
     private val connections = database.smbConnectionDao()
     private val navigation = database.browserNavigationDao()
 
-    val all: Flow<List<SmbConnectionInfo>> = connections.observeAll().map { items -> items.map(SmbConnectionEntity::toModel) }
+    val all: Flow<List<SmbConnectionInfo>> = connections.observeAll().map { items ->
+        items.map { it.toModel(credentialCipher) }
+    }
 
     suspend fun save(info: SmbConnectionInfo) {
         val fixed = info.copy(id = info.id.ifBlank { UUID.randomUUID().toString() })
-        connections.upsert(fixed.toEntity())
+        connections.upsert(fixed.toEntity(credentialCipher))
     }
 
     suspend fun delete(id: String) {
@@ -178,24 +186,24 @@ class BrowserNavigationRepository(context: Context) {
     }
 }
 
-private fun SmbConnectionEntity.toModel(): SmbConnectionInfo = SmbConnectionInfo(
+private fun SmbConnectionEntity.toModel(credentialCipher: SmbCredentialCipher): SmbConnectionInfo = SmbConnectionInfo(
     id = id,
     name = name,
     host = host,
     port = port,
     share = share,
     username = username,
-    password = password,
+    password = credentialCipher.decrypt(id, encryptedPassword),
     domain = domain,
 )
 
-private fun SmbConnectionInfo.toEntity(): SmbConnectionEntity = SmbConnectionEntity(
+private fun SmbConnectionInfo.toEntity(credentialCipher: SmbCredentialCipher): SmbConnectionEntity = SmbConnectionEntity(
     id = id,
     name = name,
     host = host,
     port = port,
     share = share,
     username = username,
-    password = password,
+    encryptedPassword = credentialCipher.encrypt(id, password),
     domain = domain,
 )

@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,5 +55,25 @@ class AppDatabaseTest {
         assertEquals(emptyList<SmbConnectionEntity>(), database.smbConnectionDao().observeAll().first())
         assertNull(database.browserNavigationDao().locationFor("smb:nas"))
         assertNull(database.browserNavigationDao().focusAnchorFor("smb:nas", ""))
+    }
+
+    @Test
+    fun smb_credentials_are_encrypted_at_rest_and_decrypted_by_repository() = runBlocking {
+        val repository = SmbConnectionRepository(database)
+        val info = SmbConnectionInfo(
+            id = "nas",
+            name = "家庭 NAS",
+            host = "192.168.1.2",
+            share = "媒体",
+            username = "用户",
+            password = "密碼-Secret-123",
+        )
+
+        repository.save(info)
+
+        val stored = database.smbConnectionDao().observeAll().first().single()
+        assertNotEquals(info.password, stored.encryptedPassword)
+        assertTrue(stored.encryptedPassword.startsWith("v1:"))
+        assertEquals(info, repository.all.first().single())
     }
 }

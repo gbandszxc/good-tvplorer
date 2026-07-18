@@ -13,11 +13,13 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <!-- MVP 从公共目录开始。MANAGE_EXTERNAL_STORAGE 需要特殊授权，后续可改成 SAF/MediaStore 优先。 -->
+    <!-- 当前从公共媒体目录开始浏览；后续通过 SAF/MediaStore 扩展访问范围。 -->
 
     <application
         android:allowBackup="true"
         android:banner="@drawable/app_banner"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"

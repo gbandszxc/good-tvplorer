@@ -67,6 +67,10 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -93,6 +97,7 @@ kotlin {
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    implementation(platform("org.jetbrains.kotlinx:kotlinx-serialization-bom:1.8.1"))
     implementation("androidx.activity:activity-compose:1.12.1")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
