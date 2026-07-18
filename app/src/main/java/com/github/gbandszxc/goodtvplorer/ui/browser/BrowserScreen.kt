@@ -566,11 +566,30 @@ private fun FileRow(
     FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus, onClick) { focused ->
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             MediaThumb(item, thumbnail, Modifier.size(48.dp), onThumbnailVisible, onThumbnailHidden)
-            Column(Modifier.weight(1f)) {
-                Text(item.name, color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                Text(meta(item), color = if (focused) Color(0xFF4C3B12) else Color(0xFFA8B8C7), fontSize = 16.sp, maxLines = 1)
-            }
-            Text(kindLabel(item.kind), color = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), fontSize = 16.sp)
+            Text(
+                item.name,
+                modifier = Modifier.width(360.dp).then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
+                color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
+            )
+            Text(
+                Formatters.size(item.size),
+                modifier = Modifier.width(120.dp),
+                color = if (focused) Color(0xFF4C3B12) else Color(0xFFA8B8C7),
+                fontSize = 16.sp,
+                maxLines = 1,
+            )
+            Text(
+                Formatters.time(item.modifiedAtMillis),
+                modifier = Modifier.weight(1f),
+                color = if (focused) Color(0xFF4C3B12) else Color(0xFFA8B8C7),
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -28,6 +29,7 @@ import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.data.FileKind
 import com.github.gbandszxc.goodtvplorer.data.SourceKind
 import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
+import com.github.gbandszxc.goodtvplorer.domain.Formatters
 import com.github.gbandszxc.goodtvplorer.ui.browser.BrowserScreen
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvTheme
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserPreviewMetadataState
@@ -194,6 +196,41 @@ class MainDockLayoutTest {
     }
 
     @Test
+    fun listDisplaysNameSizeAndDateInSeparateColumns() {
+        val name = "这是一个用于验证固定宽度和走马灯效果的超长文件名称.txt"
+        val modifiedAt = 1_700_000_000_000L
+        var displayScale by mutableStateOf(0.8f)
+        setBrowserContent(
+            initialViewMode = BrowserViewMode.List,
+            canNavigateUp = false,
+            displayScaleProvider = { displayScale },
+            itemsOverride = listOf(
+                FileItem(
+                    name = name,
+                    handle = FileHandle("local", SourceKind.Local, name),
+                    kind = FileKind.Text,
+                    size = 123L,
+                    modifiedAtMillis = modifiedAt,
+                ),
+            ),
+        )
+        composeRule.onNodeWithContentDescription("编辑路径")
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+
+        listOf(0.8f, 1f, 1.2f).forEach { scale ->
+            composeRule.runOnIdle { displayScale = scale }
+            val nameBounds = composeRule.onAllNodesWithText(name, useUnmergedTree = true)[0].getUnclippedBoundsInRoot()
+            val sizeBounds = composeRule.onNodeWithText("123 B", useUnmergedTree = true).getUnclippedBoundsInRoot()
+            val dateBounds = composeRule.onNodeWithText(Formatters.time(modifiedAt), useUnmergedTree = true).getUnclippedBoundsInRoot()
+
+            assertEquals(360f, (nameBounds.right - nameBounds.left).value, 0.5f)
+            assertEquals(120f, (sizeBounds.right - sizeBounds.left).value, 0.5f)
+            assertTrue(nameBounds.right <= sizeBounds.left)
+            assertTrue(sizeBounds.right <= dateBounds.left)
+        }
+    }
+
+    @Test
     fun dockSourceAndSourceTextWidthsFollowDisplayScale() {
         var displayScale by mutableStateOf(0.8f)
         composeRule.setContent {
@@ -271,11 +308,13 @@ class MainDockLayoutTest {
         itemCount: Int = 1,
         searchQuery: String = "",
         displayScale: Float = 1f,
+        itemsOverride: List<FileItem>? = null,
+        displayScaleProvider: () -> Float = { displayScale },
     ) {
         composeRule.setContent {
             var viewMode by remember { mutableStateOf(initialViewMode) }
             var contentGeneration by remember { mutableIntStateOf(0) }
-            val items = List(itemCount) { index ->
+            val items = itemsOverride ?: List(itemCount) { index ->
                 FileItem(
                     name = "folder-$index",
                     handle = FileHandle("local", SourceKind.Local, "folder-$contentGeneration-$index"),
@@ -301,7 +340,7 @@ class MainDockLayoutTest {
                     },
                     onRefresh = { contentGeneration++ },
                     onBack = { contentGeneration++ },
-                    displayScale = displayScale,
+                    displayScale = displayScaleProvider(),
                 ) { focusNavigation ->
                     key(contentGeneration) {
                         BrowserScreen(
@@ -325,7 +364,7 @@ class MainDockLayoutTest {
                             onPreviewMetadataRequest = {},
                             onThumbnailVisible = {},
                             onThumbnailHidden = {},
-                            displayScale = displayScale,
+                            displayScale = displayScaleProvider(),
                         )
                     }
                 }
