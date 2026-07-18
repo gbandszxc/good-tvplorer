@@ -180,7 +180,7 @@ private fun TopDock(
     onLocal: () -> Unit,
     onNetwork: () -> Unit,
 ) {
-    val down = if (showNetworkHub) navigation.contentTarget else navigation.toolbarTarget
+    val down = if (showNetworkHub) navigation.contentTarget else navigation.path
     Row(
         Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 24.dp)
             .focusRestorer(fallback = navigation.selectedSource)

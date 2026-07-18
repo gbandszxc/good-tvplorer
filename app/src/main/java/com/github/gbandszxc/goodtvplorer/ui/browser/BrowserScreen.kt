@@ -174,7 +174,7 @@ internal fun BrowserScreen(
                                     focusModifier = contentFocusModifier(
                                         navigation = navigation,
                                         attachEntryRequester = contentEntryKey == NavigateUpFocusKey,
-                                        up = navigation.toolbarTarget,
+                                        up = navigation.path,
                                         down = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
                                         left = navigation.dockTarget(browserActionsVisible = true),
                                         right = FocusRequester.Cancel,
@@ -203,7 +203,7 @@ internal fun BrowserScreen(
                                     focusModifier = contentFocusModifier(
                                         navigation = navigation,
                                         attachEntryRequester = contentEntryKey == item.handle.path,
-                                        up = if (position == 0) navigation.toolbarTarget else FocusRequester.Default,
+                                        up = if (position == 0) navigation.path else FocusRequester.Default,
                                         down = if (position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
                                         left = navigation.dockTarget(browserActionsVisible = true),
                                         right = FocusRequester.Cancel,
@@ -236,7 +236,7 @@ internal fun BrowserScreen(
                                     focusModifier = contentFocusModifier(
                                         navigation = navigation,
                                         attachEntryRequester = contentEntryKey == NavigateUpFocusKey,
-                                        up = navigation.toolbarTarget,
+                                        up = navigation.path,
                                         down = if (lastRowStart == 0) FocusRequester.Cancel else FocusRequester.Default,
                                         left = navigation.dockTarget(browserActionsVisible = true),
                                         right = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
@@ -265,7 +265,7 @@ internal fun BrowserScreen(
                                     focusModifier = contentFocusModifier(
                                         navigation = navigation,
                                         attachEntryRequester = contentEntryKey == item.handle.path,
-                                        up = if (position < 4) navigation.toolbarTarget else FocusRequester.Default,
+                                        up = if (position < 4) navigation.path else FocusRequester.Default,
                                         down = if (position >= lastRowStart) FocusRequester.Cancel else FocusRequester.Default,
                                         left = if (position % 4 == 0) navigation.dockTarget(browserActionsVisible = true) else FocusRequester.Default,
                                         right = if (position % 4 == 3 || position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
@@ -333,7 +333,6 @@ private fun BrowserToolbar(
 
     Row(
         Modifier.fillMaxWidth().height(48.dp)
-            .focusRestorer(fallback = navigation.path)
             .focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -473,6 +472,10 @@ private fun SearchField(
             }.onPreviewKeyEvent {
                 if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (it.key) {
+                    Key.DirectionLeft -> {
+                        navigation.path.requestFocus()
+                        true
+                    }
                     Key.DirectionUp -> {
                         navigation.selectedSource.requestFocus()
                         true

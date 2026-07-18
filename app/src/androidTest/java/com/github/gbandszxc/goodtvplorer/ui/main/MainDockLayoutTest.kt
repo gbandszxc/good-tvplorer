@@ -124,6 +124,32 @@ class MainDockLayoutTest {
     }
 
     @Test
+    fun sourceAndContentAlwaysEnterToolbarThroughPath() {
+        setBrowserContent(BrowserViewMode.List, canNavigateUp = false, searchQuery = "folder")
+        composeRule.onNodeWithContentDescription("编辑路径")
+            .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNodeWithContentDescription("搜索当前目录").assertIsFocused()
+
+        pressKey(KeyEvent.KEYCODE_DPAD_UP)
+        composeRule.onNodeWithContentDescription("本机").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNodeWithContentDescription("搜索当前目录").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_UP)
+        composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
+        composeRule.onNodeWithContentDescription("搜索当前目录").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_LEFT)
+        composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_LEFT)
+        composeRule.onNodeWithContentDescription("排序").assertIsFocused()
+    }
+
+    @Test
     fun toolbarDownStaysPutWhenDirectoryHasNoFocusableContent() {
         setBrowserContent(BrowserViewMode.List, canNavigateUp = false, itemCount = 0)
         composeRule.onNodeWithContentDescription("编辑路径")
@@ -138,6 +164,7 @@ class MainDockLayoutTest {
         initialViewMode: BrowserViewMode = BrowserViewMode.Grid,
         canNavigateUp: Boolean = true,
         itemCount: Int = 1,
+        searchQuery: String = "",
     ) {
         composeRule.setContent {
             var viewMode by remember { mutableStateOf(initialViewMode) }
@@ -178,7 +205,7 @@ class MainDockLayoutTest {
                             thumbnails = emptyMap(),
                             viewMode = viewMode,
                             sort = BrowserSort(),
-                            searchQuery = "",
+                            searchQuery = searchQuery,
                             searchItems = null,
                             searchLoading = false,
                             previewMetadata = BrowserPreviewMetadataState(),
