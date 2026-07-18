@@ -110,8 +110,9 @@ fun Modifier.tvOkClick(
     onClick: () -> Unit,
     enabled: Boolean = true,
     role: Role? = null,
+    onTouchClick: (() -> Unit)? = null,
 ): Modifier = then(if (enabled) Modifier.onTvOk(onClick) else Modifier)
-    .clickable(enabled = enabled, role = role, onClick = onClick)
+    .clickable(enabled = enabled, role = role, onClick = onTouchClick ?: onClick)
 
 fun Modifier.tvTabClick(
     selected: Boolean,

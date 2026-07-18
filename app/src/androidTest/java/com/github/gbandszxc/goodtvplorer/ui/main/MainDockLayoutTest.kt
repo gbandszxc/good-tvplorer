@@ -23,6 +23,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.Density
 import androidx.test.platform.app.InstrumentationRegistry
 import com.github.gbandszxc.goodtvplorer.data.FileHandle
@@ -327,6 +329,39 @@ class MainDockLayoutTest {
             .assert(hasScrollAction())
     }
 
+    @Test
+    fun touchClickFocusesFileBeforeOpeningIt() {
+        var opened = 0
+        setBrowserContent(
+            initialViewMode = BrowserViewMode.List,
+            canNavigateUp = false,
+            itemCount = 2,
+            onOpen = { opened++ },
+        )
+        val secondItem = composeRule.onNode(hasText("folder-1") and hasClickAction())
+
+        secondItem.performTouchInput { click() }
+        secondItem.assertIsFocused()
+        composeRule.runOnIdle { assertEquals(0, opened) }
+
+        secondItem.performTouchInput { click() }
+        composeRule.runOnIdle { assertEquals(1, opened) }
+    }
+
+    @Test
+    fun remoteConfirmationStillOpensFocusedFileImmediately() {
+        var opened = 0
+        setBrowserContent(
+            initialViewMode = BrowserViewMode.List,
+            canNavigateUp = false,
+            onOpen = { opened++ },
+        )
+
+        pressKey(KeyEvent.KEYCODE_DPAD_CENTER)
+
+        composeRule.runOnIdle { assertEquals(1, opened) }
+    }
+
     private fun setBrowserContent(
         initialViewMode: BrowserViewMode = BrowserViewMode.Grid,
         canNavigateUp: Boolean = true,
@@ -335,6 +370,7 @@ class MainDockLayoutTest {
         displayScale: Float = 1f,
         itemsOverride: List<FileItem>? = null,
         displayScaleProvider: () -> Float = { displayScale },
+        onOpen: (FileItem) -> Unit = {},
     ) {
         composeRule.setContent {
             var viewMode by remember { mutableStateOf(initialViewMode) }
@@ -388,7 +424,7 @@ class MainDockLayoutTest {
                                 searchLoading = false,
                                 previewMetadata = BrowserPreviewMetadataState(),
                                 focusAnchorPath = null,
-                                onOpen = {},
+                                onOpen = onOpen,
                                 onNavigateUp = {},
                                 onOpenPath = {},
                                 onSortChange = {},

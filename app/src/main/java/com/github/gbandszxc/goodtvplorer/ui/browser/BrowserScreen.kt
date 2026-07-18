@@ -578,7 +578,14 @@ private fun FileRow(
     onFocus: () -> Unit,
     onClick: () -> Unit,
 ) {
-    FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus, onClick) { focused ->
+    FocusSurface(
+        Modifier.fillMaxWidth().then(focusModifier),
+        initiallyFocused,
+        onInitialFocus,
+        onFocus,
+        onClick,
+        touchFocusFirst = true,
+    ) { focused ->
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             MediaThumb(item, thumbnail, Modifier.size(48.dp), onThumbnailVisible, onThumbnailHidden)
             Text(
@@ -654,7 +661,14 @@ private fun FileTile(
     onFocus: () -> Unit,
     onClick: () -> Unit,
 ) {
-    FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus, onClick) { focused ->
+    FocusSurface(
+        Modifier.fillMaxWidth().then(focusModifier),
+        initiallyFocused,
+        onInitialFocus,
+        onFocus,
+        onClick,
+        touchFocusFirst = true,
+    ) { focused ->
         GridTileContent(focused, item.name) { modifier ->
             MediaThumb(item, thumbnail, modifier, onThumbnailVisible, onThumbnailHidden)
         }
@@ -686,6 +700,7 @@ private fun FocusSurface(
     onInitialFocus: () -> Unit,
     onFocus: () -> Unit,
     onClick: () -> Unit,
+    touchFocusFirst: Boolean = false,
     content: @Composable (Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -705,7 +720,12 @@ private fun FocusSurface(
             }
             .focusRequester(focusRequester)
             .focusable()
-            .tvOkClick(onClick),
+            .tvOkClick(
+                onClick = onClick,
+                onTouchClick = {
+                    if (touchFocusFirst && !focused) focusRequester.requestFocus() else onClick()
+                },
+            ),
     ) {
         content(focused)
     }
