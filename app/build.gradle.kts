@@ -10,7 +10,7 @@ plugins {
 
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
-val appVersionName = "0.1.0"
+val appVersionName = "0.1.1"
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
@@ -23,7 +23,7 @@ android {
         applicationId = "com.github.gbandszxc.goodtvplorer"
         minSdk = 23
         targetSdk = 36
-        versionCode = 1
+        versionCode = 2
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
