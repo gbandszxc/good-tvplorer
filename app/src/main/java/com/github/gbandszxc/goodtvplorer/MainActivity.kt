@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
                             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                             hide(WindowInsetsCompat.Type.systemBars())
                         } else {
-                            show(WindowInsetsCompat.Type.systemBars())
+                            show(WindowInsetsCompat.Type.navigationBars())
                         }
                     }
                 }

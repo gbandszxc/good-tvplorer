@@ -16,8 +16,11 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -27,6 +30,13 @@ import org.junit.runner.RunWith
 class SettingsActivityTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<SettingsActivity>()
+
+    @Test
+    fun appRunsWithoutStatusBar() {
+        val insets = requireNotNull(ViewCompat.getRootWindowInsets(composeRule.activity.window.decorView))
+
+        assertFalse(insets.isVisible(WindowInsetsCompat.Type.statusBars()))
+    }
 
     @Test
     fun initialDisplaySectionIsSelectedAndFocused() {
