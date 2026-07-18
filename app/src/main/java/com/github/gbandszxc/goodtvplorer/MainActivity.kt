@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -39,6 +41,7 @@ import com.github.gbandszxc.goodtvplorer.viewmodel.Screen
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<MainViewModel>()
     private var lastGrantedMediaPermissions: Set<String>? = null
+    private var lastBackPressedAt = 0L
     private val mediaPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         lastGrantedMediaPermissions = grantedMediaPermissions()
         viewModel.onMediaPermissionsChanged()
@@ -56,6 +59,7 @@ class MainActivity : ComponentActivity() {
             TvTheme {
                 val state by viewModel.state.collectAsState()
                 val immersivePreviewVisible = state.screen is Screen.ImageViewer || state.screen is Screen.VideoPreview
+                LaunchedEffect(state.screen) { lastBackPressedAt = 0L }
                 LaunchedEffect(immersivePreviewVisible) {
                     WindowCompat.setDecorFitsSystemWindows(window, !immersivePreviewVisible)
                     WindowCompat.getInsetsController(window, window.decorView).apply {
@@ -84,6 +88,13 @@ class MainActivity : ComponentActivity() {
                             onToggleView = viewModel::toggleBrowserViewMode,
                             onRefresh = viewModel::refresh,
                             onBack = viewModel::goBack,
+                            onSystemBack = { contentFocused ->
+                                if (screen is Screen.Browser && shouldNavigateUp(screen.path, contentFocused)) {
+                                    viewModel.goBack()
+                                } else {
+                                    confirmExit()
+                                }
+                            },
                             displayScale = state.fontScale,
                         ) { focusNavigation ->
                             if (screen is Screen.Browser) {
@@ -162,7 +173,23 @@ class MainActivity : ComponentActivity() {
 
     private fun grantedMediaPermissions(): Set<String> = mediaPermissions(Build.VERSION.SDK_INT)
         .filterTo(mutableSetOf()) { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
+
+    private fun confirmExit() {
+        val now = SystemClock.elapsedRealtime()
+        if (isExitConfirmed(lastBackPressedAt, now)) {
+            finish()
+        } else {
+            lastBackPressedAt = now
+            Toast.makeText(this, "再按一次返回退出应用", Toast.LENGTH_SHORT).show()
+        }
+    }
 }
+
+internal fun shouldNavigateUp(path: String, contentFocused: Boolean): Boolean =
+    path.isNotBlank() && contentFocused
+
+internal fun isExitConfirmed(previousBackAt: Long, now: Long): Boolean =
+    previousBackAt != 0L && now - previousBackAt in 0L..2_000L
 
 @SuppressLint("InlinedApi")
 internal fun mediaPermissions(sdkInt: Int): Array<String> = when {

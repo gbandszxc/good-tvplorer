@@ -1,5 +1,6 @@
 package com.github.gbandszxc.goodtvplorer.ui.main
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -78,6 +79,8 @@ internal class MainFocusNavigation {
     var contentAvailable by mutableStateOf(false)
     var contentInitialFocusAllowed by mutableStateOf(true)
         private set
+    var contentFocused by mutableStateOf(false)
+        private set
     private var lastMainRegion by mutableStateOf(MainFocusRegion.Content)
     private var lastToolbar by mutableStateOf(path)
     private var lastDock by mutableStateOf(view)
@@ -106,23 +109,27 @@ internal class MainFocusNavigation {
 
     fun focusSource() {
         contentInitialFocusAllowed = false
+        contentFocused = false
         lastMainRegion = MainFocusRegion.Source
     }
 
     fun focusToolbar(target: FocusRequester) {
         contentInitialFocusAllowed = false
+        contentFocused = false
         lastMainRegion = MainFocusRegion.Toolbar
         lastToolbar = target
     }
 
     fun focusContent() {
         contentInitialFocusAllowed = true
+        contentFocused = true
         lastMainRegion = MainFocusRegion.Content
     }
 
     fun focusDock(target: FocusRequester, focused: Boolean) {
         if (focused) {
             contentInitialFocusAllowed = false
+            contentFocused = false
             lastDock = target
         }
     }
@@ -142,12 +149,14 @@ internal fun MainDockLayout(
     onToggleView: () -> Unit,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
+    onSystemBack: (contentFocused: Boolean) -> Unit = {},
     displayScale: Float = 1f,
     content: @Composable (MainFocusNavigation) -> Unit,
 ) {
     val navigation = remember { MainFocusNavigation() }
     val layoutScale = displayScale.coerceIn(0.8f, 1.2f)
     val layoutSpacing = 16.dp * layoutScale
+    BackHandler { onSystemBack(navigation.contentFocused) }
     SideEffect {
         navigation.networkSelected = networkSelected
         if (showNetworkHub) navigation.contentAvailable = true
