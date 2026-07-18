@@ -84,11 +84,12 @@ class MainActivity : ComponentActivity() {
                             onToggleView = viewModel::toggleBrowserViewMode,
                             onRefresh = viewModel::refresh,
                             onBack = viewModel::goBack,
-                        ) {
+                        ) { contentAutoFocusEnabled ->
                             if (screen is Screen.Browser) {
                                 BrowserScreen(
                                     path = screen.path,
                                     canNavigateUp = screen.sourceKey != "local" || screen.path.isNotBlank(),
+                                    contentAutoFocusEnabled = contentAutoFocusEnabled,
                                     state = state.browser,
                                     thumbnails = state.thumbnails,
                                     viewMode = state.browserViewMode,

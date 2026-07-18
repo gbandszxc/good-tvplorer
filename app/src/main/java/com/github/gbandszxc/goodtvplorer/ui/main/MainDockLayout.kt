@@ -58,17 +58,26 @@ fun MainDockLayout(
     onToggleView: () -> Unit,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
-    content: @Composable () -> Unit,
+    content: @Composable (contentAutoFocusEnabled: Boolean) -> Unit,
 ) {
+    var browserActionFocused by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxSize().background(Color(0xFF0B121A))) {
-        SideDock(onConnections, onSettings, browserViewMode, onToggleView, onRefresh, onBack)
+        SideDock(
+            onConnections,
+            onSettings,
+            browserViewMode,
+            onToggleView,
+            onRefresh,
+            onBack,
+            onBrowserActionFocusChange = { browserActionFocused = it },
+        )
         Column(Modifier.weight(1f).fillMaxHeight()) {
             TopDock(networkSelected, onLocal, onNetwork)
             Box(Modifier.weight(1f).fillMaxWidth().padding(start = 24.dp, top = 16.dp, end = 24.dp, bottom = 16.dp)) {
                 if (showNetworkHub) {
                     NetworkHub(connections, onOpenSmb, onConnections)
                 } else {
-                    content()
+                    content(!browserActionFocused)
                 }
             }
         }
@@ -135,6 +144,7 @@ private fun SideDock(
     onToggleView: () -> Unit,
     onRefresh: () -> Unit,
     onBack: () -> Unit,
+    onBrowserActionFocusChange: (Boolean) -> Unit,
 ) {
     Column(
         Modifier.width(60.dp).fillMaxHeight().background(Color(0xFF101A26)).padding(vertical = 14.dp),
@@ -143,11 +153,11 @@ private fun SideDock(
         if (browserViewMode != null) {
             val viewLabel = if (browserViewMode == BrowserViewMode.Grid) "切换为列表视图" else "切换为网格视图"
             val viewIcon = if (browserViewMode == BrowserViewMode.Grid) R.drawable.ic_view_list else R.drawable.ic_view_grid
-            DockIconButton(viewIcon, viewLabel, onToggleView)
+            DockIconButton(viewIcon, viewLabel, onToggleView, onBrowserActionFocusChange)
             Spacer(Modifier.height(8.dp))
-            DockIconButton(R.drawable.ic_refresh, "刷新", onRefresh)
+            DockIconButton(R.drawable.ic_refresh, "刷新", onRefresh, onBrowserActionFocusChange)
             Spacer(Modifier.height(8.dp))
-            DockIconButton(R.drawable.ic_back, "返回上级", onBack)
+            DockIconButton(R.drawable.ic_back, "返回上级", onBack, onBrowserActionFocusChange)
         }
         Spacer(Modifier.weight(1f))
         DockIconButton(R.drawable.ic_connections, "连接管理", onConnections)
@@ -157,14 +167,17 @@ private fun SideDock(
 }
 
 @Composable
-private fun DockIconButton(icon: Int, label: String, onClick: () -> Unit) {
+private fun DockIconButton(icon: Int, label: String, onClick: () -> Unit, onFocusChange: (Boolean) -> Unit = {}) {
     var focused by remember { mutableStateOf(false) }
     val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color.Transparent, label = "dock-background")
     val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "dock-tint")
     Box(
         Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(background)
             .border(if (focused) 2.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent, RoundedCornerShape(12.dp))
-            .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChange(it.isFocused)
+            }.focusable().tvOkClick(onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
