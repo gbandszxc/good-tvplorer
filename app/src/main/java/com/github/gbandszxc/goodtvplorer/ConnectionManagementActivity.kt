@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -36,13 +38,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -248,6 +263,8 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
     var domain by remember(existing) { mutableStateOf(existing?.domain.orEmpty()) }
     val scope = rememberCoroutineScope()
     val fieldRequesters = remember { List(7) { BringIntoViewRequester() } }
+    val firstFieldFocus = remember { FocusRequester() }
+    var initialFocusRequested by remember { mutableStateOf(false) }
     fun Modifier.keepVisible(index: Int) = bringIntoViewRequester(fieldRequesters[index]).onFocusChanged {
         if (it.isFocused) scope.launch { fieldRequesters[index].bringIntoView() }
     }
@@ -272,48 +289,56 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
                     name,
                     { name = it },
                     "名称",
-                    Modifier.fillMaxWidth().keepVisible(0),
+                    Modifier
+                        .fillMaxWidth()
+                        .focusRequester(firstFieldFocus)
+                        .onGloballyPositioned {
+                            if (!initialFocusRequested) {
+                                initialFocusRequested = true
+                                firstFieldFocus.requestFocus()
+                            }
+                        }
+                        .keepVisible(0),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SmbTextField(
-                        host,
-                        { host = it },
-                        "主机",
-                        Modifier.weight(1f).keepVisible(1),
-                    )
-                    SmbTextField(
-                        port,
-                        { port = it },
-                        "端口",
-                        Modifier.width(128.dp).keepVisible(2),
-                    )
-                }
+                SmbTextField(
+                    host,
+                    { host = it },
+                    "主机",
+                    Modifier.fillMaxWidth().keepVisible(1),
+                )
+                SmbTextField(
+                    port,
+                    { port = it },
+                    "端口",
+                    Modifier.fillMaxWidth().keepVisible(2),
+                    keyboardType = KeyboardType.Number,
+                )
                 SmbTextField(
                     share,
                     { share = it },
                     "共享目录",
                     Modifier.fillMaxWidth().keepVisible(3),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SmbTextField(
-                        user,
-                        { user = it },
-                        "用户名",
-                        Modifier.weight(1f).keepVisible(4),
-                    )
-                    SmbTextField(
-                        password,
-                        { password = it },
-                        "密码",
-                        Modifier.weight(1f).keepVisible(5),
-                        visualTransformation = PasswordVisualTransformation(),
-                    )
-                }
+                SmbTextField(
+                    user,
+                    { user = it },
+                    "用户名",
+                    Modifier.fillMaxWidth().keepVisible(4),
+                )
+                SmbTextField(
+                    password,
+                    { password = it },
+                    "密码",
+                    Modifier.fillMaxWidth().keepVisible(5),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardType = KeyboardType.Password,
+                )
                 SmbTextField(
                     domain,
                     { domain = it },
                     "域（可选）",
                     Modifier.fillMaxWidth().keepVisible(6),
+                    imeAction = ImeAction.Done,
                 )
             }
         },
@@ -389,15 +414,40 @@ private fun SmbTextField(
     label: String,
     modifier: Modifier,
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    imeAction: ImeAction = ImeAction.Next,
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = modifier.onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyUp) {
+                false
+            } else {
+                when (event.key) {
+                    Key.DirectionDown -> focusManager.moveFocus(FocusDirection.Down)
+                    Key.DirectionUp -> focusManager.moveFocus(FocusDirection.Up)
+                    else -> false
+                }
+            }
+        },
         label = { Text(label, fontSize = 16.sp) },
         singleLine = true,
         visualTransformation = visualTransformation,
         textStyle = TextStyle(fontSize = 20.sp),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = imeAction,
+        ),
+        keyboardActions = KeyboardActions(
+            onNext = { focusManager.moveFocus(FocusDirection.Down) },
+            onDone = {
+                keyboardController?.hide()
+                focusManager.moveFocus(FocusDirection.Down)
+            },
+        ),
         shape = RoundedCornerShape(8.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = MaterialTheme.colorScheme.onSurface,
