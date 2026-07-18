@@ -335,7 +335,8 @@ private fun DisplaySettingsContent(
                 )
                 TvButton(
                     text = "恢复默认",
-                    modifier = Modifier.width(160.dp),
+                    modifier = Modifier.width(128.dp),
+                    contentAlignment = Alignment.Center,
                     onClick = { onFontScale(1f) },
                 )
             }
