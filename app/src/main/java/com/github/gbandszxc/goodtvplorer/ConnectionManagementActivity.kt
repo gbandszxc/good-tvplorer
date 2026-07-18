@@ -24,10 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -59,9 +59,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.lifecycleScope
 import com.github.gbandszxc.goodtvplorer.data.SmbConnectionInfo
 import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
@@ -82,8 +85,14 @@ class ConnectionManagementActivity : ComponentActivity() {
             TvTheme {
                 val connections by connectionsStore.all.collectAsState(initial = emptyList())
                 val fontScale by displaySettings.fontScale.collectAsState(initial = 1f)
+                val displayScale = fontScale.coerceIn(0.8f, 1.2f)
                 val density = LocalDensity.current
-                androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides Density(density.density, effectiveFontScale(fontScale))) {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalDensity provides Density(
+                        density = density.density * displayScale,
+                        fontScale = effectiveFontScale(displayScale) / displayScale,
+                    ),
+                ) {
                     BackHandler { finish() }
                     ConnectionManagementScreen(
                         connections = connections,
@@ -393,28 +402,47 @@ private fun ConnectionDialog(
     content: @Composable () -> Unit,
 ) {
     val shape = RoundedCornerShape(8.dp)
-    AlertDialog(
+    val density = LocalDensity.current
+    Dialog(
         onDismissRequest = onDismissRequest,
-        modifier = Modifier.border(
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shape,
-        ),
-        title = {
-            Text(
-                title,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        },
-        text = content,
-        confirmButton = confirmButton,
-        dismissButton = dismissButton,
-        shape = shape,
-        containerColor = MaterialTheme.colorScheme.surface,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        tonalElevation = 0.dp,
-    )
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides density) {
+            Surface(
+                modifier = Modifier
+                    .width(560.dp)
+                    .testTag("connection-dialog")
+                    .border(
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        shape,
+                    ),
+                shape = shape,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                ) {
+                    Text(
+                        title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    content()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        dismissButton()
+                        confirmButton()
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -96,11 +96,17 @@ class SettingsActivity : ComponentActivity() {
         setContent {
             TvTheme {
                 val fontScale by displaySettings.fontScale.collectAsState(initial = 1f)
-                val density = LocalDensity.current
-                androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides Density(density.density, effectiveFontScale(fontScale))) {
+                val displayScale = fontScale.coerceIn(0.8f, 1.2f)
+                val baseDensity = LocalDensity.current
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalDensity provides Density(
+                        density = baseDensity.density * displayScale,
+                        fontScale = effectiveFontScale(displayScale) / displayScale,
+                    ),
+                ) {
                     BackHandler { finish() }
                     SettingsScreen(
-                        fontScale = fontScale,
+                        fontScale = displayScale,
                         onFontScale = { value -> lifecycleScope.launch { displaySettings.setFontScale(value) } },
                         cacheSize = { cache.sizeBytes() },
                         clearCache = { cache.clear() },
@@ -134,7 +140,7 @@ private fun SettingsScreen(
     Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(
             Modifier
-                .width((260 * fontScale).dp)
+                .width(260.dp)
                 .fillMaxHeight()
                 .background(SettingsSidebar)
                 .padding(horizontal = 28.dp, vertical = 32.dp),
@@ -287,13 +293,13 @@ private fun DisplaySettingsContent(
                 .padding(horizontal = 20.dp, vertical = 14.dp),
         ) {
             Text(
-                text = "字体缩放",
+                text = "界面缩放",
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "调整电视端的信息密度；100% 为应用标准字号，更改会立即生效。",
+                text = "调整电视端的信息密度；尺寸和文字同步变化，100% 为应用标准大小，更改会立即生效。",
                 color = SettingsMutedText,
                 fontSize = 18.sp,
             )
@@ -308,14 +314,14 @@ private fun DisplaySettingsContent(
                     enabled = percentage > 80,
                     contentPadding = PaddingValues(0.dp),
                     contentAlignment = Alignment.Center,
-                    contentDescription = "减小字体",
+                    contentDescription = "缩小界面",
                     onClick = { onFontScale(nextFontScale(fontScale, -0.05f)) },
                 )
                 Box(
                     Modifier
                         .width(112.dp)
                         .heightIn(min = 48.dp)
-                        .semantics { contentDescription = "当前字体缩放 $percentage%" },
+                        .semantics { contentDescription = "当前界面缩放 $percentage%" },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -331,7 +337,7 @@ private fun DisplaySettingsContent(
                     enabled = percentage < 120,
                     contentPadding = PaddingValues(0.dp),
                     contentAlignment = Alignment.Center,
-                    contentDescription = "增大字体",
+                    contentDescription = "放大界面",
                     onClick = { onFontScale(nextFontScale(fontScale, 0.05f)) },
                 )
                 TvButton(

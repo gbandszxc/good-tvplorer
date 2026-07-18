@@ -112,10 +112,8 @@ internal fun BrowserScreen(
     onPreviewMetadataRequest: (FileItem) -> Unit,
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
-    displayScale: Float = 1f,
 ) {
-    val layoutScale = displayScale.coerceIn(0.8f, 1.2f)
-    val layoutSpacing = 16.dp * layoutScale
+    val layoutSpacing = 16.dp
     var searchHasFocus by remember { mutableStateOf(false) }
     var initialFocusConsumed by remember(path) { mutableStateOf(!navigation.contentInitialFocusAllowed) }
     val searchableItems = searchItems ?: state.items
@@ -270,7 +268,6 @@ internal fun BrowserScreen(
                 previewMetadata,
                 onThumbnailVisible,
                 onThumbnailHidden,
-                layoutScale,
             )
         }
     }
@@ -705,8 +702,8 @@ private fun FocusSurface(
 }
 
 @Composable
-private fun PreviewPanel(item: FileItem?, thumbnail: File?, metadata: BrowserPreviewMetadataState, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit, displayScale: Float) {
-    Column(Modifier.width(260.dp * displayScale).fillMaxHeight().testTag("preview-panel").clip(RoundedCornerShape(12.dp)).background(Color(0xFF101A26)).padding(16.dp)) {
+private fun PreviewPanel(item: FileItem?, thumbnail: File?, metadata: BrowserPreviewMetadataState, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit) {
+    Column(Modifier.width(260.dp).fillMaxHeight().testTag("preview-panel").clip(RoundedCornerShape(12.dp)).background(Color(0xFF101A26)).padding(16.dp)) {
         Text("快速预览", color = Color(0xFF7CC7D8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(14.dp))
         if (item == null) {

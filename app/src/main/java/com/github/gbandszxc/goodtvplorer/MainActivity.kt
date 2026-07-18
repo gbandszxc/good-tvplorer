@@ -72,7 +72,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 val density = LocalDensity.current
-                CompositionLocalProvider(LocalDensity provides Density(density.density, effectiveFontScale(state.fontScale))) {
+                val displayScale = state.fontScale.coerceIn(0.8f, 1.2f)
+                CompositionLocalProvider(
+                    LocalDensity provides Density(
+                        density = density.density * displayScale,
+                        fontScale = effectiveFontScale(displayScale) / displayScale,
+                    ),
+                ) {
                     BackHandler(onBack = viewModel::goBack)
                     when (val screen = state.screen) {
                         is Screen.Browser, Screen.Network -> MainDockLayout(
@@ -95,7 +101,6 @@ class MainActivity : ComponentActivity() {
                                     confirmExit()
                                 }
                             },
-                            displayScale = state.fontScale,
                         ) { focusNavigation ->
                             if (screen is Screen.Browser) {
                                 BrowserScreen(
@@ -119,7 +124,6 @@ class MainActivity : ComponentActivity() {
                                     onPreviewMetadataRequest = viewModel::requestBrowserPreviewMetadata,
                                     onThumbnailVisible = viewModel::requestThumbnail,
                                     onThumbnailHidden = viewModel::releaseThumbnail,
-                                    displayScale = state.fontScale,
                                 )
                             }
                         }

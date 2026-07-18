@@ -237,7 +237,10 @@ class MainDockLayoutTest {
             TvTheme {
                 val density = LocalDensity.current
                 CompositionLocalProvider(
-                    LocalDensity provides Density(density.density, effectiveFontScale(displayScale)),
+                    LocalDensity provides Density(
+                        density = density.density * displayScale,
+                        fontScale = effectiveFontScale(displayScale) / displayScale,
+                    ),
                 ) {
                     MainDockLayout(
                         networkSelected = true,
@@ -252,33 +255,32 @@ class MainDockLayoutTest {
                         onToggleView = {},
                         onRefresh = {},
                         onBack = {},
-                        displayScale = displayScale,
                     ) {}
                 }
             }
         }
 
-        val compactDock = composeRule.onNodeWithTag("main-dock").getUnclippedBoundsInRoot()
-        val compactSource = composeRule.onNodeWithContentDescription("本机").getUnclippedBoundsInRoot()
-        val compactText = composeRule.onNodeWithText("本机", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val compactDock = composeRule.onNodeWithTag("main-dock").fetchSemanticsNode().boundsInRoot
+        val compactSource = composeRule.onNodeWithContentDescription("本机").fetchSemanticsNode().boundsInRoot
+        val compactText = composeRule.onNodeWithText("本机", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
 
         composeRule.runOnIdle { displayScale = 1.2f }
 
-        composeRule.onNodeWithTag("main-dock").getUnclippedBoundsInRoot().let {
-            assertTrue(it.right - it.left > compactDock.right - compactDock.left)
+        composeRule.onNodeWithTag("main-dock").fetchSemanticsNode().boundsInRoot.let {
+            assertEquals(1.5f, it.width / compactDock.width, 0.02f)
         }
-        composeRule.onNodeWithContentDescription("本机").getUnclippedBoundsInRoot().let {
-            assertTrue(it.right - it.left > compactSource.right - compactSource.left)
+        composeRule.onNodeWithContentDescription("本机").fetchSemanticsNode().boundsInRoot.let {
+            assertEquals(1.5f, it.width / compactSource.width, 0.02f)
         }
-        composeRule.onNodeWithText("本机", useUnmergedTree = true).getUnclippedBoundsInRoot().let {
-            assertTrue(it.right - it.left > compactText.right - compactText.left)
+        composeRule.onNodeWithText("本机", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.let {
+            assertEquals(1.5f, it.width / compactText.width, 0.05f)
         }
     }
 
     @Test
     fun mainRegionsShareOneScaledSpacing() {
         val displayScale = 1.2f
-        val spacing = 16f * displayScale
+        val spacing = 16f
         setBrowserContent(displayScale = displayScale)
 
         val root = composeRule.onNodeWithTag("main-layout").getUnclippedBoundsInRoot()
@@ -307,13 +309,12 @@ class MainDockLayoutTest {
         var displayScale by mutableStateOf(0.8f)
         setBrowserContent(displayScaleProvider = { displayScale })
 
-        val compactPanel = composeRule.onNodeWithTag("preview-panel").getUnclippedBoundsInRoot()
+        val compactPanel = composeRule.onNodeWithTag("preview-panel").fetchSemanticsNode().boundsInRoot
 
         composeRule.runOnIdle { displayScale = 1.2f }
 
-        val expandedPanel = composeRule.onNodeWithTag("preview-panel").getUnclippedBoundsInRoot()
-        assertEquals(208f, (compactPanel.right - compactPanel.left).value, 0.5f)
-        assertEquals(312f, (expandedPanel.right - expandedPanel.left).value, 0.5f)
+        val expandedPanel = composeRule.onNodeWithTag("preview-panel").fetchSemanticsNode().boundsInRoot
+        assertEquals(1.5f, expandedPanel.width / compactPanel.width, 0.02f)
     }
 
     private fun setBrowserContent(
@@ -339,47 +340,54 @@ class MainDockLayoutTest {
             }
 
             TvTheme {
-                MainDockLayout(
-                    networkSelected = false,
-                    showNetworkHub = false,
-                    connections = emptyList(),
-                    onLocal = {},
-                    onNetwork = {},
-                    onOpenSmb = {},
-                    onConnections = {},
-                    onSettings = {},
-                    browserViewMode = viewMode,
-                    onToggleView = {
-                        viewMode = if (viewMode == BrowserViewMode.Grid) BrowserViewMode.List else BrowserViewMode.Grid
-                    },
-                    onRefresh = { contentGeneration++ },
-                    onBack = { contentGeneration++ },
-                    displayScale = displayScaleProvider(),
-                ) { focusNavigation ->
-                    key(contentGeneration) {
-                        BrowserScreen(
-                            path = "folder",
-                            canNavigateUp = canNavigateUp,
-                            navigation = focusNavigation,
-                            state = BrowserState(items = items),
-                            thumbnails = emptyMap(),
-                            viewMode = viewMode,
-                            sort = BrowserSort(),
-                            searchQuery = searchQuery,
-                            searchItems = null,
-                            searchLoading = false,
-                            previewMetadata = BrowserPreviewMetadataState(),
-                            focusAnchorPath = null,
-                            onOpen = {},
-                            onNavigateUp = {},
-                            onOpenPath = {},
-                            onSortChange = {},
-                            onSearchQueryChange = {},
-                            onPreviewMetadataRequest = {},
-                            onThumbnailVisible = {},
-                            onThumbnailHidden = {},
-                            displayScale = displayScaleProvider(),
-                        )
+                val displayScale = displayScaleProvider().coerceIn(0.8f, 1.2f)
+                val density = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(
+                        density = density.density * displayScale,
+                        fontScale = effectiveFontScale(displayScale) / displayScale,
+                    ),
+                ) {
+                    MainDockLayout(
+                        networkSelected = false,
+                        showNetworkHub = false,
+                        connections = emptyList(),
+                        onLocal = {},
+                        onNetwork = {},
+                        onOpenSmb = {},
+                        onConnections = {},
+                        onSettings = {},
+                        browserViewMode = viewMode,
+                        onToggleView = {
+                            viewMode = if (viewMode == BrowserViewMode.Grid) BrowserViewMode.List else BrowserViewMode.Grid
+                        },
+                        onRefresh = { contentGeneration++ },
+                        onBack = { contentGeneration++ },
+                    ) { focusNavigation ->
+                        key(contentGeneration) {
+                            BrowserScreen(
+                                path = "folder",
+                                canNavigateUp = canNavigateUp,
+                                navigation = focusNavigation,
+                                state = BrowserState(items = items),
+                                thumbnails = emptyMap(),
+                                viewMode = viewMode,
+                                sort = BrowserSort(),
+                                searchQuery = searchQuery,
+                                searchItems = null,
+                                searchLoading = false,
+                                previewMetadata = BrowserPreviewMetadataState(),
+                                focusAnchorPath = null,
+                                onOpen = {},
+                                onNavigateUp = {},
+                                onOpenPath = {},
+                                onSortChange = {},
+                                onSearchQueryChange = {},
+                                onPreviewMetadataRequest = {},
+                                onThumbnailVisible = {},
+                                onThumbnailHidden = {},
+                            )
+                        }
                     }
                 }
             }

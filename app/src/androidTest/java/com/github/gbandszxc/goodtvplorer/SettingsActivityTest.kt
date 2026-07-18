@@ -17,6 +17,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -65,14 +67,14 @@ class SettingsActivityTest {
 
         sendKey(Key.DirectionRight)
         composeRule
-            .onNodeWithContentDescription("减小字体")
+            .onNodeWithContentDescription("缩小界面")
             .assertHasClickAction()
             .assertIsFocused()
 
         repeat(4) { sendKey(Key.DirectionCenter) }
         waitForScale("80%")
         composeRule
-            .onNodeWithContentDescription("减小字体")
+            .onNodeWithContentDescription("缩小界面")
             .assertIsNotEnabled()
 
         composeRule.activityRule.scenario.recreate()
@@ -82,7 +84,7 @@ class SettingsActivityTest {
             .assertIsFocused()
         sendKey(Key.DirectionRight)
         composeRule
-            .onNodeWithContentDescription("增大字体")
+            .onNodeWithContentDescription("放大界面")
             .assertIsFocused()
 
         composeRule
@@ -92,15 +94,55 @@ class SettingsActivityTest {
 
         listOf("105%", "110%", "115%", "120%").forEach { expected ->
             composeRule
-                .onNodeWithContentDescription("增大字体")
+                .onNodeWithContentDescription("放大界面")
                 .assertHasClickAction()
                 .assertIsEnabled()
                 .performClick()
             waitForScale(expected)
         }
         composeRule
-            .onNodeWithContentDescription("增大字体")
+            .onNodeWithContentDescription("放大界面")
             .assertIsNotEnabled()
+
+        composeRule
+            .onNode(hasText("恢复默认") and hasClickAction())
+            .performClick()
+        waitForScale("100%")
+    }
+
+    @Test
+    fun interfaceScaleChangesSettingsDimensionsAndText() {
+        composeRule
+            .onNode(hasText("恢复默认") and hasClickAction())
+            .performClick()
+        waitForScale("100%")
+
+        val baseRow = composeRule
+            .onNode(hasText("显示设置") and hasClickAction())
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val baseTitle = composeRule
+            .onNodeWithText("设置", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+
+        repeat(4) {
+            composeRule
+                .onNodeWithContentDescription("放大界面")
+                .performClick()
+        }
+        waitForScale("120%")
+
+        val scaledRow = composeRule
+            .onNode(hasText("显示设置") and hasClickAction())
+            .fetchSemanticsNode()
+            .boundsInRoot
+        val scaledTitle = composeRule
+            .onNodeWithText("设置", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+        assertEquals((baseRow.bottom - baseRow.top) * 1.2f, scaledRow.bottom - scaledRow.top, 1f)
+        assertTrue(scaledTitle.bottom - scaledTitle.top > baseTitle.bottom - baseTitle.top)
 
         composeRule
             .onNode(hasText("恢复默认") and hasClickAction())
