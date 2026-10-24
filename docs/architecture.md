@@ -213,7 +213,8 @@ Release 默认启用 R8 代码压缩、混淆和资源压缩，并按 ARM / x86 
 `.github/workflows/release.yml` 提供手动触发的发布流水线（Actions → Release → Run workflow）：
 
 - 输入版本号（三段数字，如 `0.1.2`）和可选的 Release 说明，打包 `arm64-v8a`、`armeabi-v7a`、`x86` 三个签名 Release APK。
-- APK 命名与本地一致：`good-tvplorer-release-<版本号>-<abi>.apk`；可选输入 `versionCode`，留空时使用 `app/build.gradle.kts` 的默认值。覆盖安装升级需保证新包 versionCode 不低于设备上已装版本。
+- APK 命名与本地一致：`good-tvplorer-release-<版本号>-<abi>.apk`；对外版本名、tag 与 Release 标题均为输入的版本号。
+- versionCode 自动推导：`（主 * 1000000 + 次 * 1000 + 修订） * 1000 + 构建号`（构建号取 run_number 低三位）。同一版本随构建递增，重打的包可覆盖安装，跨版本亦严格递增。
 - 以版本号作为 tag 创建 Release，标题为版本号；同一版本号重新执行时仅覆盖同名附件，不修改已有的 Release 说明。
 - 签名信息通过仓库 secrets 注入（`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`），不得提交密钥文件与口令。
 
