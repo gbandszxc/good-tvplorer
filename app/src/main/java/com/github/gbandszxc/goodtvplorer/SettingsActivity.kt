@@ -134,7 +134,15 @@ private fun SettingsScreen(
     val decreaseFontFocus = remember { FocusRequester() }
     val increaseFontFocus = remember { FocusRequester() }
     val aboutActionFocus = remember { FocusRequester() }
+    val cacheContentFocus = remember { FocusRequester() }
     val percentage = fontScalePercent(fontScale)
+    // 侧栏菜单右行统一指向当前 section 内容区的首个可操作控件：
+    // 显式目标与内容区在 key(section) 内同帧挂载，不再有指向未附加 requester 的哑火死角。
+    val sectionContentFocus = when (section) {
+        SettingsSection.Display -> if (percentage > 80) decreaseFontFocus else increaseFontFocus
+        SettingsSection.Cache -> cacheContentFocus
+        SettingsSection.About -> aboutActionFocus
+    }
     val context = LocalContext.current
     val githubUrl = "https://github.com/gbandszxc/good-tvplorer"
 
@@ -160,20 +168,21 @@ private fun SettingsScreen(
                     text = SettingsSection.Display.title,
                     selected = section == SettingsSection.Display,
                     focusRequester = displayMenuFocus,
-                    rightFocus = if (percentage > 80) decreaseFontFocus else increaseFontFocus,
+                    rightFocus = sectionContentFocus,
                     onClick = { section = SettingsSection.Display },
                 )
                 SettingsMenuItem(
                     text = SettingsSection.Cache.title,
                     selected = section == SettingsSection.Cache,
                     focusRequester = cacheMenuFocus,
+                    rightFocus = sectionContentFocus,
                     onClick = { section = SettingsSection.Cache },
                 )
                 SettingsMenuItem(
                     text = SettingsSection.About.title,
                     selected = section == SettingsSection.About,
                     focusRequester = aboutMenuFocus,
-                    rightFocus = aboutActionFocus,
+                    rightFocus = sectionContentFocus,
                     onClick = { section = SettingsSection.About },
                 )
             }
@@ -211,13 +220,20 @@ private fun SettingsScreen(
                     when (section) {
                         SettingsSection.Display -> DisplaySettingsContent(
                             fontScale = fontScale,
+                            menuFocus = displayMenuFocus,
                             decreaseFontFocus = decreaseFontFocus,
                             increaseFontFocus = increaseFontFocus,
                             onFontScale = onFontScale,
                         )
-                        SettingsSection.Cache -> CacheSettingsContent(cacheSize, clearCache)
+                        SettingsSection.Cache -> CacheSettingsContent(
+                            cacheSize = cacheSize,
+                            clearCache = clearCache,
+                            menuFocus = cacheMenuFocus,
+                            firstActionFocus = cacheContentFocus,
+                        )
                         SettingsSection.About -> AboutContent(
                             version = "v${BuildConfig.VERSION_NAME} / ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}",
+                            menuFocus = aboutMenuFocus,
                             firstActionFocus = aboutActionFocus,
                             onCheckUpdate = {
                                 Toast.makeText(context, "检查更新功能开发中", Toast.LENGTH_SHORT).show()
@@ -299,6 +315,7 @@ private fun SettingsMenuItem(
 @Composable
 private fun DisplaySettingsContent(
     fontScale: Float,
+    menuFocus: FocusRequester,
     decreaseFontFocus: FocusRequester,
     increaseFontFocus: FocusRequester,
     onFontScale: (Float) -> Unit,
@@ -330,7 +347,8 @@ private fun DisplaySettingsContent(
             ) {
                 TvButton(
                     text = "−",
-                    modifier = Modifier.width(64.dp).focusRequester(decreaseFontFocus),
+                    modifier = Modifier.width(64.dp).focusRequester(decreaseFontFocus)
+                        .focusProperties { left = menuFocus },
                     enabled = percentage > 80,
                     contentPadding = PaddingValues(0.dp),
                     contentAlignment = Alignment.Center,
@@ -362,7 +380,7 @@ private fun DisplaySettingsContent(
                 )
                 TvButton(
                     text = "恢复默认",
-                    modifier = Modifier.width(128.dp),
+                    modifier = Modifier.width(128.dp).focusProperties { right = FocusRequester.Cancel },
                     contentAlignment = Alignment.Center,
                     onClick = { onFontScale(1f) },
                 )
@@ -372,7 +390,12 @@ private fun DisplaySettingsContent(
 }
 
 @Composable
-private fun CacheSettingsContent(cacheSize: suspend () -> Long, clearCache: suspend () -> Unit) {
+private fun CacheSettingsContent(
+    cacheSize: suspend () -> Long,
+    clearCache: suspend () -> Unit,
+    menuFocus: FocusRequester,
+    firstActionFocus: FocusRequester,
+) {
     var size by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -389,6 +412,8 @@ private fun CacheSettingsContent(cacheSize: suspend () -> Long, clearCache: susp
             title = "清理缓存",
             description = "不影响已保存的 SMB 连接和显示设置。",
             detail = "清理",
+            modifier = Modifier.focusRequester(firstActionFocus)
+                .focusProperties { left = menuFocus },
             enabled = size != null && size != 0L,
             onClick = {
                 scope.launch {
@@ -403,6 +428,7 @@ private fun CacheSettingsContent(cacheSize: suspend () -> Long, clearCache: susp
 @Composable
 private fun AboutContent(
     version: String,
+    menuFocus: FocusRequester,
     firstActionFocus: FocusRequester,
     onCheckUpdate: () -> Unit,
     onOpenGithub: () -> Unit,
@@ -418,7 +444,8 @@ private fun AboutContent(
             title = "检查更新",
             description = "功能开发中，暂不检查或下载更新。",
             detail = "功能开发中",
-            modifier = Modifier.focusRequester(firstActionFocus),
+            modifier = Modifier.focusRequester(firstActionFocus)
+                .focusProperties { left = menuFocus },
             onClick = onCheckUpdate,
         )
         SettingsGroupDivider()
@@ -426,6 +453,7 @@ private fun AboutContent(
             title = "GitHub",
             description = "github.com/gbandszxc/good-tvplorer",
             detail = "打开",
+            modifier = Modifier.focusProperties { left = menuFocus },
             onClick = onOpenGithub,
         )
     }
@@ -471,7 +499,7 @@ private fun SettingsRow(
     var focused by remember { mutableStateOf(false) }
     val interactive = onClick != null
     val active = interactive && enabled
-    val isFocused = active && focused
+    val isFocused = interactive && focused
     val background by animateColorAsState(
         if (isFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
         animationSpec = tween(160),
@@ -500,13 +528,13 @@ private fun SettingsRow(
         animationSpec = tween(160),
         label = "$title-border",
     )
+    // 操作行禁用时保持可聚焦并完整显示焦点样式，确认是否生效交由 tvOkClick 的 enabled 决定（与 TvButton 同构）。
     val interactionModifier = when {
         !interactive -> Modifier
-        active -> Modifier
+        else -> Modifier
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .tvOkClick(onClick = onClick, role = Role.Button)
-        else -> Modifier.tvOkClick(onClick = onClick, enabled = false, role = Role.Button)
+            .tvOkClick(onClick = onClick, enabled = active, role = Role.Button)
     }
 
     Column(
