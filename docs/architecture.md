@@ -117,7 +117,7 @@ SMB 连接信息由 `SmbConnectionRepository` 保存到统一 Room 数据库。�
 | 目录 | 用途 |
 |------|------|
 | `image-thumbs/` | 图片缩略图（JPEG，最大边 640px） |
-| `covers/` | 音频内嵌封面 |
+| `covers/` | 音频封面（同目录封面或内嵌封面） |
 | `video-frames/` | 视频关键帧缩略图 |
 
 ### 缩略图生成策略
@@ -136,10 +136,19 @@ SMB 连接信息由 `SmbConnectionRepository` 保存到统一 Room 数据库。�
 |------|----------|
 | 图片 | Coil3 加载 `ImageModel`，占位图使用已生成的缩略图 |
 | 视频 | Media3 ExoPlayer + `PlayerView`，支持沉浸控制层、内嵌/SRT 字幕、倍速、seek 与六种画面模式；缩略图由 `MediaMetadataRetriever` 通过 `FileSourceMediaDataSource` 范围读取取帧 |
-| 音频 | Media3 ExoPlayer 播放，展示播放器解析的内嵌封面、同名 LRC 歌词并支持 seek |
+| 音频 | Media3 ExoPlayer 播放，`MainViewModel` 持有会话级播放器；展示同目录或内嵌封面、同名 LRC 或内嵌歌词，支持滚动/全屏歌词、四种播放模式与定时退出 |
 | 文本 | `readPrefix` 读取前 1MB，UTF-8 解码，显示行号、自动换行和遥控器翻页 |
 
 `FileSourceDataSource` 将 Media3 的读取请求映射为 `FileSource.readRange`，用 256 KiB 内存窗口合并解析器的小范围顺序读取，单次最多读取 1 MiB。SMB 播放和进度跳转不完整缓存媒体文件；歌词与字幕仅加载同目录同名的小文件。
+
+### 音频播放
+
+- **播放器归属**：`MainViewModel` 持有会话级 `AudioPlaybackController`，内部只有一个 Media3 `ExoPlayer` 实例，音频属性配置为音乐并启用拔出耳机自动暂停；首次打开音频时创建，离开音频页或 ViewModel 清理时释放。UI 只订阅 `audioState` 并派发动作，不再自行创建播放器。
+- **队列与模式**：播放队列复用当前目录中同类型、当前排序的条目；`advanceAudioQueue` 通过 `nextQueueIndex` / `previousQueueIndex` 计算目标下标，实现顺序播放、单曲循环、列表循环和随机播放。播放器进入 `STATE_ENDED` 时触发自动续播，顺序播放到末尾即停止。
+- **歌词**：`AudioLyricsRepository` 先读取同目录同名 `.lrc`（最多 1 MiB），为空时再解析音频头部（最多 512 KiB）的内嵌歌词（ID3v2.3/2.4 `USLT`、FLAC Vorbis `LYRICS` / `UNSYNCEDLYRICS`）；文本按 UTF-8 BOM、UTF-16 BOM、严格 UTF-8、GB18030 的顺序解码。含时间标签的文本解析为 LRC 行并支持 `[offset:±毫秒]`，内嵌纯文本降级为单行。
+- **封面**：`ThumbnailRepository.audioCover` 优先读取同目录的 `cover` / `folder` / `front` / `albumart` / `album` / `artwork` 图片，其次读取内嵌封面；结果按文件 key 缓存在 `covers/`，每个目录的封面结论在仓库生命周期内复用。
+- **会话状态**：播放模式与定时退出只保存在 `AudioPlaybackController` 的内存状态中，不写入 Room。定时器按墙上时钟计时，暂停播放期间继续倒计时；到期暂停并停止播放、返回文件列表。
+- **当前范围**：不含 MediaSession、前台服务、后台播放与通知栏控制；如需离开音频页后继续播放，应单独立项。
 
 ## UI 与导航
 
@@ -227,7 +236,7 @@ Release 默认启用 R8 代码压缩、混淆和资源压缩，并按 ARM / x86 
 app/src/main/java/com/github/gbandszxc/goodtvplorer/
 ├── data/            文件源、SMB 实现与数据模型
 │   └── persistence/ Room 实体、DAO、迁移与 Repository
-├── domain/          缩略图、缓存、元数据与媒体适配
+├── domain/          缩略图、缓存、元数据、歌词解析与媒体适配
 ├── ui/              Compose 屏幕、组件与主题
 ├── viewmodel/       浏览、导航和预览状态
 ├── MainActivity.kt
@@ -248,7 +257,7 @@ app/src/main/java/com/github/gbandszxc/goodtvplorer/
 - 图片：本地/SMB 图片预览、同类型媒体切换和胶卷缩略图懒加载。
 - 视频：本地/SMB 流式播放、同名 SRT / 内嵌字幕、倍速、进度控制与六种画面模式；缩略图通过范围读取取帧。
 - 文本：UTF-8 预览，最多读取前 1MB，显示行号、自动换行和翻页。
-- 音频：本地/SMB 流式播放、内嵌封面、同名 LRC 歌词与进度控制。
+- 音频：本地/SMB 流式播放、同目录或内嵌封面、同名 LRC 或内嵌歌词、滚动/全屏歌词、四种播放模式与定时退出。
 
 ## 路线图
 
