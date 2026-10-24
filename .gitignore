@@ -43,3 +43,5 @@ thumb_cache/
 .codegraph/
 .superpowers/
 tmp/
+# Sub-driver plans
+.subdriver/
