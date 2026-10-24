@@ -335,7 +335,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun openNetworkHub() {
+    fun openNetworkHub() {
         browserJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()

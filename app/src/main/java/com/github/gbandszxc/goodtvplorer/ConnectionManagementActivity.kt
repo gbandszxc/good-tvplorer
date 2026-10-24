@@ -4,12 +4,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +30,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -40,6 +46,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -54,6 +61,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -69,7 +77,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.lifecycleScope
 import com.github.gbandszxc.goodtvplorer.data.SmbConnectionInfo
+import com.github.gbandszxc.goodtvplorer.data.displayTarget
 import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
+import com.github.gbandszxc.goodtvplorer.data.isAnonymousCredentials
 import com.github.gbandszxc.goodtvplorer.data.persistence.DisplaySettingsRepository
 import com.github.gbandszxc.goodtvplorer.data.persistence.SmbConnectionRepository
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
@@ -170,7 +180,7 @@ private fun ConnectionManagementScreen(
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
-                                "${connection.host}:${connection.port}/${connection.share}",
+                                connection.displayTarget(includePort = true),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 18.sp,
                             )
@@ -273,19 +283,29 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
     var user by remember(existing) { mutableStateOf(existing?.username.orEmpty()) }
     var password by remember(existing) { mutableStateOf(existing?.password.orEmpty()) }
     var domain by remember(existing) { mutableStateOf(existing?.domain.orEmpty()) }
+    var anonymous by remember(existing) { mutableStateOf(existing?.isAnonymousCredentials ?: false) }
     val scope = rememberCoroutineScope()
-    val fieldRequesters = remember { List(7) { BringIntoViewRequester() } }
-    val focusRequesters = remember { List(7) { FocusRequester() } }
-    var initialFocusRequested by remember { mutableStateOf(false) }
-    fun Modifier.keepVisible(index: Int) = bringIntoViewRequester(fieldRequesters[index]).onFocusChanged {
-        if (it.isFocused) scope.launch { fieldRequesters[index].bringIntoView() }
+    // 焦点链节点：0 名称 1 主机 2 端口 3 共享目录 4 匿名访问 5 用户名 6 密码 7 域
+    val fieldRequesters = remember { List(8) { BringIntoViewRequester() } }
+    val focusRequesters = remember { List(8) { FocusRequester() } }
+    val visibleNodes = buildList {
+        addAll(0..4)
+        if (!anonymous) addAll(5..6)
+        add(7)
     }
-    fun Modifier.formField(index: Int) = focusRequester(focusRequesters[index])
-        .focusProperties {
-            if (index > 0) up = focusRequesters[index - 1]
-            if (index < focusRequesters.lastIndex) down = focusRequesters[index + 1]
-        }
-        .keepVisible(index)
+    var initialFocusRequested by remember { mutableStateOf(false) }
+    fun Modifier.keepVisible(node: Int) = bringIntoViewRequester(fieldRequesters[node]).onFocusChanged {
+        if (it.isFocused) scope.launch { fieldRequesters[node].bringIntoView() }
+    }
+    fun Modifier.formField(node: Int): Modifier {
+        val position = visibleNodes.indexOf(node)
+        return focusRequester(focusRequesters[node])
+            .focusProperties {
+                if (position > 0) up = focusRequesters[visibleNodes[position - 1]]
+                if (position < visibleNodes.lastIndex) down = focusRequesters[visibleNodes[position + 1]]
+            }
+            .keepVisible(node)
+    }
     ConnectionDialog(
         onDismissRequest = onDismiss,
         title = if (existing == null) "新增 SMB" else "编辑 SMB",
@@ -296,9 +316,9 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
             ) {
                 Text(
                     if (existing == null) {
-                        "主机和共享目录必填；用户名、密码均留空时匿名连接。"
+                        "主机必填；共享目录留空时展示服务器全部共享；用户名和密码均留空时匿名连接。"
                     } else {
-                        "修改连接信息；用户名、密码均留空时匿名连接。"
+                        "修改连接信息；共享目录留空时展示服务器全部共享；用户名和密码均留空时匿名连接。"
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 18.sp,
@@ -335,30 +355,37 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
                 SmbTextField(
                     share,
                     { share = it },
-                    "共享目录",
+                    "共享目录（可选）",
                     Modifier.fillMaxWidth().formField(3),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SmbTextField(
-                        user,
-                        { user = it },
-                        "用户名",
-                        Modifier.weight(1f).formField(4),
-                    )
-                    SmbTextField(
-                        password,
-                        { password = it },
-                        "密码",
-                        Modifier.weight(1f).formField(5),
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardType = KeyboardType.Password,
-                    )
+                SmbAnonymousToggle(
+                    checked = anonymous,
+                    onCheckedChange = { anonymous = it },
+                    modifier = Modifier.fillMaxWidth().formField(4),
+                )
+                if (!anonymous) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SmbTextField(
+                            user,
+                            { user = it },
+                            "用户名",
+                            Modifier.weight(1f).formField(5),
+                        )
+                        SmbTextField(
+                            password,
+                            { password = it },
+                            "密码",
+                            Modifier.weight(1f).formField(6),
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardType = KeyboardType.Password,
+                        )
+                    }
                 }
                 SmbTextField(
                     domain,
                     { domain = it },
                     "域（可选）",
-                    Modifier.fillMaxWidth().formField(6),
+                    Modifier.fillMaxWidth().formField(7),
                     imeAction = ImeAction.Done,
                 )
             }
@@ -367,7 +394,7 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
             TvButton(
                 "保存",
                 modifier = Modifier.width(112.dp),
-                enabled = host.isNotBlank() && share.isNotBlank(),
+                enabled = host.isNotBlank(),
                 contentAlignment = Alignment.Center,
             ) {
                 onSave(
@@ -377,8 +404,8 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
                         host,
                         port.toIntOrNull() ?: 445,
                         share,
-                        user,
-                        password,
+                        if (anonymous) "" else user,
+                        if (anonymous) "" else password,
                         domain.ifBlank { null },
                     ),
                 )
@@ -393,6 +420,81 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
             )
         },
     )
+}
+
+@Composable
+private fun SmbAnonymousToggle(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusManager = LocalFocusManager.current
+    var focused by remember { mutableStateOf(false) }
+    val background by animateColorAsState(
+        if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(160),
+        label = "anonymous-toggle-bg",
+    )
+    val border by animateDpAsState(if (focused) 3.dp else 1.dp, animationSpec = tween(160), label = "anonymous-toggle-border")
+    val borderColor by animateColorAsState(
+        if (focused) Color(0xFFFFE3A1) else MaterialTheme.colorScheme.outlineVariant,
+        animationSpec = tween(160),
+        label = "anonymous-toggle-border-color",
+    )
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(background)
+            .border(BorderStroke(border, borderColor), RoundedCornerShape(8.dp))
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyUp) {
+                    false
+                } else {
+                    when (event.key) {
+                        Key.DirectionDown -> {
+                            focusManager.moveFocus(FocusDirection.Down)
+                            true
+                        }
+                        Key.DirectionUp -> {
+                            focusManager.moveFocus(FocusDirection.Up)
+                            true
+                        }
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            onCheckedChange(!checked)
+                            true
+                        }
+                        else -> false
+                    }
+                }
+            }
+            .toggleable(
+                value = checked,
+                role = Role.Checkbox,
+                onValueChange = onCheckedChange,
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .testTag("smb-anonymous-toggle")
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = null,
+            colors = CheckboxDefaults.colors(
+                checkedColor = MaterialTheme.colorScheme.secondary,
+                checkmarkColor = MaterialTheme.colorScheme.surface,
+                uncheckedColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.outline,
+            ),
+        )
+        Text(
+            "匿名访问",
+            color = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
 }
 
 @Composable

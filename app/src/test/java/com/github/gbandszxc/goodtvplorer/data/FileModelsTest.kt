@@ -1,6 +1,7 @@
 package com.github.gbandszxc.goodtvplorer.data
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 
 class FileModelsTest {
@@ -10,6 +11,22 @@ class FileModelsTest {
 
         assertNotEquals(base.cacheKey(), base.copy(size = 11L).cacheKey())
         assertNotEquals(base.cacheKey(), base.copy(modifiedAtMillis = 21L).cacheKey())
+    }
+
+    @Test
+    fun `display target keeps share suffix and optional port`() {
+        val info = SmbConnectionInfo("id", "NAS", "nas.local", 4450, share = "media", username = "", password = "")
+
+        assertEquals("nas.local:4450/media", info.displayTarget(includePort = true))
+        assertEquals("nas.local/media", info.displayTarget())
+    }
+
+    @Test
+    fun `display target without share omits trailing slash`() {
+        val info = SmbConnectionInfo("id", "NAS", "nas.local", 445, share = " ", username = "", password = "")
+
+        assertEquals("nas.local:445", info.displayTarget(includePort = true))
+        assertEquals("nas.local", info.displayTarget())
     }
 
     private fun item(size: Long, modified: Long) = FileItem(

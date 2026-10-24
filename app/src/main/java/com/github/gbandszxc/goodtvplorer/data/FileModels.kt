@@ -35,3 +35,14 @@ data class SmbConnectionInfo(
     val password: String,
     val domain: String? = null,
 )
+
+/** 用户名和密码均留空时按 SMB 匿名认证；填写用户名但密码留空仍按无密码账户认证，不视为匿名。 */
+val SmbConnectionInfo.isAnonymousCredentials: Boolean
+    get() = username.isBlank() && password.isEmpty()
+
+/** 连接列表展示用目标地址；共享目录为空表示浏览服务器全部共享，不追加尾斜杠。 */
+fun SmbConnectionInfo.displayTarget(includePort: Boolean = false): String = buildString {
+    append(host)
+    if (includePort) append(':').append(port)
+    if (!share.isBlank()) append('/').append(share.trim())
+}

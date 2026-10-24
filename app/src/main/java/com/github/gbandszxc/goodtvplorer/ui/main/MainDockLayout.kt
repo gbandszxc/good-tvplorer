@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.gbandszxc.goodtvplorer.R
 import com.github.gbandszxc.goodtvplorer.data.SmbConnectionInfo
+import com.github.gbandszxc.goodtvplorer.data.displayTarget
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
 import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserViewMode
@@ -72,6 +73,7 @@ internal class MainFocusNavigation {
     val view = FocusRequester()
     val refresh = FocusRequester()
     val back = FocusRequester()
+    val networkHub = FocusRequester()
     val connections = FocusRequester()
     val settings = FocusRequester()
 
@@ -95,7 +97,7 @@ internal class MainFocusNavigation {
         get() = if (contentAvailable) content else FocusRequester.Cancel
 
     fun dockTarget(browserActionsVisible: Boolean): FocusRequester =
-        if (!browserActionsVisible && lastDock !== connections && lastDock !== settings) connections else lastDock
+        if (!browserActionsVisible && lastDock !== networkHub && lastDock !== connections && lastDock !== settings) connections else lastDock
 
     fun mainTarget(showNetworkHub: Boolean): FocusRequester = when (lastMainRegion) {
         MainFocusRegion.Source -> selectedSource
@@ -143,6 +145,7 @@ internal fun MainDockLayout(
     onLocal: () -> Unit,
     onNetwork: () -> Unit,
     onOpenSmb: (String) -> Unit,
+    onNetworkHub: () -> Unit,
     onConnections: () -> Unit,
     onSettings: () -> Unit,
     browserViewMode: BrowserViewMode?,
@@ -163,6 +166,7 @@ internal fun MainDockLayout(
         Modifier.fillMaxSize().testTag("main-layout").background(Color(0xFF0B121A)),
     ) {
         SideDock(
+            onNetworkHub,
             onConnections,
             onSettings,
             browserViewMode,
@@ -290,6 +294,7 @@ private fun SourceTab(
 
 @Composable
 private fun SideDock(
+    onNetworkHub: () -> Unit,
     onConnections: () -> Unit,
     onSettings: () -> Unit,
     browserViewMode: BrowserViewMode?,
@@ -319,17 +324,28 @@ private fun SideDock(
         }
         Spacer(Modifier.weight(1f))
         DockIconButton(
+            R.drawable.ic_network_location,
+            "网络位置",
+            navigation.networkHub,
+            if (browserActionsVisible) navigation.back else FocusRequester.Cancel,
+            navigation.connections,
+            dockRight,
+            navigation,
+            onNetworkHub,
+        )
+        Spacer(Modifier.height(8.dp))
+        DockIconButton(
             R.drawable.ic_connections,
             "连接管理",
             navigation.connections,
-            if (browserActionsVisible) navigation.back else FocusRequester.Cancel,
+            navigation.networkHub,
             navigation.settings,
             dockRight,
             navigation,
             onConnections,
         )
         Spacer(Modifier.height(8.dp))
-        DockIconButton(R.drawable.ic_settings, "设置", navigation.settings, navigation.connections, FocusRequester.Cancel, dockRight, navigation, onSettings)
+        DockIconButton(R.drawable.ic_settings, "设置", navigation.settings, navigation.networkHub, FocusRequester.Cancel, dockRight, navigation, onSettings)
     }
 }
 
@@ -430,7 +446,7 @@ private fun NetworkHub(
             connections.forEachIndexed { index, connection ->
                 val entryModifier = if (connection.id == entryConnectionId) Modifier.focusRequester(navigation.content) else Modifier
                 TvButton(
-                    "${connection.name}   ${connection.host}/${connection.share}",
+                    "${connection.name}   ${connection.displayTarget()}",
                     modifier = Modifier.fillMaxWidth()
                         .focusProperties {
                             if (index == 0) up = navigation.selectedSource

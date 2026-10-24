@@ -21,6 +21,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import coil3.ImageLoader
@@ -30,6 +31,7 @@ import com.github.gbandszxc.goodtvplorer.domain.ImageModelKeyer
 import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
 import com.github.gbandszxc.goodtvplorer.ui.browser.BrowserScreen
 import com.github.gbandszxc.goodtvplorer.ui.main.MainDockLayout
+import com.github.gbandszxc.goodtvplorer.ui.preview.AudioPlayerActions
 import com.github.gbandszxc.goodtvplorer.ui.preview.AudioPreview
 import com.github.gbandszxc.goodtvplorer.ui.preview.ImageViewer
 import com.github.gbandszxc.goodtvplorer.ui.preview.TextPreview
@@ -58,6 +60,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             TvTheme {
                 val state by viewModel.state.collectAsState()
+                val audio by viewModel.audioState.collectAsState()
+                val audioActions = remember(viewModel) {
+                    AudioPlayerActions(
+                        onPrevious = viewModel::playPreviousAudio,
+                        onNext = viewModel::playNextAudio,
+                        onTogglePlayPause = viewModel::toggleAudioPlayPause,
+                        onSeek = viewModel::seekAudio,
+                        onCyclePlayMode = viewModel::cycleAudioPlayMode,
+                        onStartSleepTimer = viewModel::startAudioSleepTimer,
+                        onCancelSleepTimer = viewModel::cancelAudioSleepTimer,
+                        onBack = viewModel::goBack,
+                    )
+                }
                 val immersivePreviewVisible = state.screen is Screen.ImageViewer || state.screen is Screen.VideoPreview
                 LaunchedEffect(state.screen) { lastBackPressedAt = 0L }
                 LaunchedEffect(immersivePreviewVisible) {
@@ -88,6 +103,7 @@ class MainActivity : ComponentActivity() {
                             onLocal = viewModel::openLocal,
                             onNetwork = viewModel::openNetwork,
                             onOpenSmb = viewModel::openSmb,
+                            onNetworkHub = viewModel::openNetworkHub,
                             onConnections = { startActivity(Intent(this@MainActivity, ConnectionManagementActivity::class.java)) },
                             onSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
                             browserViewMode = if (screen is Screen.Browser) state.browserViewMode else null,
@@ -144,9 +160,8 @@ class MainActivity : ComponentActivity() {
                         is Screen.AudioPreview -> AudioPreview(
                             name = screen.name,
                             state = state.preview,
-                            onPrevious = { viewModel.movePreviewItem(-1) },
-                            onNext = { viewModel.movePreviewItem(1) },
-                            onBack = viewModel::goBack,
+                            audio = audio,
+                            actions = audioActions,
                         )
                         is Screen.VideoPreview -> VideoPreview(
                             name = screen.name,

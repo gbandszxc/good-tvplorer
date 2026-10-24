@@ -4,6 +4,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -61,6 +62,8 @@ class ConnectionManagementActivityTest {
         sendKey(Key.DirectionDown)
         field(3).assertIsFocused().performTextReplacement("media")
         sendKey(Key.DirectionDown)
+        composeRule.onNodeWithTag("smb-anonymous-toggle").assertIsFocused()
+        sendKey(Key.DirectionDown)
         field(4).assertIsFocused()
         sendKey(Key.DirectionDown)
         field(5).assertIsFocused()
@@ -73,6 +76,38 @@ class ConnectionManagementActivityTest {
         saveButton().assertIsEnabled().assertIsFocused()
         sendKey(Key.DirectionLeft)
         cancelButton().assertIsFocused()
+    }
+
+    @Test
+    fun anonymousToggleHidesCredentialsAndKeepsSaveAvailableWithoutShare() {
+        composeRule.onNodeWithText("添加网络地址").performClick()
+        composeRule.onNode(hasText("SMB") and hasClickAction()).performClick()
+
+        composeRule.onNodeWithTag("smb-anonymous-toggle").performClick()
+        composeRule.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().let { fields ->
+            assertEquals(5, fields.size)
+        }
+        sendKey(Key.DirectionDown)
+        composeRule.onNodeWithTag("smb-anonymous-toggle").assertIsFocused()
+        sendKey(Key.DirectionDown)
+        field(4).assertIsFocused()
+
+        composeRule.onNodeWithTag("smb-anonymous-toggle").performClick()
+        assertEquals(7, composeRule.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size)
+
+        composeRule.onNodeWithTag("smb-anonymous-toggle").performClick()
+        field(1).performTextReplacement("nas.local")
+        saveButton().assertIsEnabled()
+    }
+
+    @Test
+    fun saveButtonStaysDisabledUntilHostIsFilled() {
+        composeRule.onNodeWithText("添加网络地址").performClick()
+        composeRule.onNode(hasText("SMB") and hasClickAction()).performClick()
+
+        saveButton().assertIsNotEnabled()
+        field(1).performTextReplacement("nas.local")
+        saveButton().assertIsEnabled()
     }
 
     @Test
