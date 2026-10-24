@@ -1,6 +1,7 @@
 package com.github.gbandszxc.goodtvplorer.viewmodel
 
 import android.app.Application
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.gbandszxc.goodtvplorer.data.FileHandle
@@ -15,14 +16,18 @@ import com.github.gbandszxc.goodtvplorer.data.cacheKey
 import com.github.gbandszxc.goodtvplorer.data.persistence.BrowserNavigationRepository
 import com.github.gbandszxc.goodtvplorer.data.persistence.DisplaySettingsRepository
 import com.github.gbandszxc.goodtvplorer.data.persistence.SmbConnectionRepository
+import com.github.gbandszxc.goodtvplorer.domain.AudioLyricsRepository
 import com.github.gbandszxc.goodtvplorer.domain.StreamingMedia
 import com.github.gbandszxc.goodtvplorer.domain.TimedTextCue
-import com.github.gbandszxc.goodtvplorer.domain.parseLrc
 import com.github.gbandszxc.goodtvplorer.domain.parseSrt
 import com.github.gbandszxc.goodtvplorer.domain.ImageModel
 import com.github.gbandszxc.goodtvplorer.domain.PreviewMetadata
 import com.github.gbandszxc.goodtvplorer.domain.PreviewMetadataRepository
 import com.github.gbandszxc.goodtvplorer.domain.ThumbnailRepository
+import com.github.gbandszxc.goodtvplorer.ui.preview.AudioPlaybackController
+import com.github.gbandszxc.goodtvplorer.ui.preview.AudioPlaybackState
+import com.github.gbandszxc.goodtvplorer.ui.preview.nextQueueIndex
+import com.github.gbandszxc.goodtvplorer.ui.preview.previousQueueIndex
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -84,6 +89,9 @@ data class PreviewState(
     val truncated: Boolean = false,
     val media: StreamingMedia? = null,
     val timedText: List<TimedTextCue> = emptyList(),
+    val cover: File? = null,
+    val lyricsLoading: Boolean = false,
+    val lyricsSource: String? = null,
     val error: String? = null,
 )
 
@@ -261,6 +269,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val navigation = BrowserNavigationRepository(app)
     private val thumbnails = ThumbnailRepository(app)
     private val previewMetadata = PreviewMetadataRepository()
+    private val audioLyrics = AudioLyricsRepository()
     private val sources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailSources = mutableMapOf<String, FileSource>(local.key to local)
     private val thumbnailRequests = RefCountedRequestRegistry(viewModelScope)
@@ -275,7 +284,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
+    private val _audioState = MutableStateFlow(AudioPlaybackState())
+    val audioState: StateFlow<AudioPlaybackState> = _audioState.asStateFlow()
+    private var audioController: AudioPlaybackController? = null
+    private var audioStateJob: Job? = null
+
     init {
+        viewModelScope.launch {
+            var wasAudio = false
+            state.collectLatest { ui ->
+                val isAudio = ui.screen is Screen.AudioPreview
+                if (wasAudio && !isAudio) releaseAudioPlayback()
+                wasAudio = isAudio
+            }
+        }
         viewModelScope.launch {
             connectionsStore.all.collectLatest { connections ->
                 browserJob?.cancel()
@@ -550,6 +572,80 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         state.previewItems.getOrNull(index + offset)?.let(::selectPreviewItem)
     }
 
+    fun toggleAudioPlayPause() {
+        audioController?.togglePlayPause()
+    }
+
+    fun seekAudio(positionMs: Long) {
+        audioController?.seekTo(positionMs)
+    }
+
+    fun seekAudioBy(deltaMs: Long) {
+        audioController?.seekBy(deltaMs)
+    }
+
+    fun cycleAudioPlayMode() {
+        audioController?.cyclePlayMode()
+    }
+
+    fun startAudioSleepTimer(minutes: Int) {
+        audioController?.startSleepTimer(minutes)
+    }
+
+    fun cancelAudioSleepTimer() {
+        audioController?.cancelSleepTimer()
+    }
+
+    fun playNextAudio() {
+        advanceAudioQueue(forward = true)
+    }
+
+    fun playPreviousAudio() {
+        advanceAudioQueue(forward = false)
+    }
+
+    private fun advanceAudioQueue(forward: Boolean) {
+        if (audioController == null) return
+        val items = _state.value.previewItems
+        val index = audioQueueIndex(items, forward) ?: return
+        items.getOrNull(index)?.let(::selectPreviewItem)
+    }
+
+    private fun audioQueueIndex(items: List<FileItem>, forward: Boolean): Int? {
+        val screen = _state.value.screen as? Screen.AudioPreview ?: return null
+        val current = items.indexOfFirst { it.handle.path == screen.path }
+        if (current < 0) return null
+        val mode = audioController?.state?.value?.playMode ?: _audioState.value.playMode
+        return if (forward) nextQueueIndex(items.size, current, mode) else previousQueueIndex(items.size, current)
+    }
+
+    private fun ensureAudioController(): AudioPlaybackController =
+        audioController ?: AudioPlaybackController(
+            context = getApplication<Application>(),
+            scope = viewModelScope,
+            onEnded = ::playNextAudio,
+            onSleepTimerExpired = ::onAudioSleepTimerExpired,
+        ).also { controller ->
+            audioController = controller
+            audioStateJob?.cancel()
+            audioStateJob = viewModelScope.launch {
+                controller.state.collectLatest { _audioState.value = it }
+            }
+        }
+
+    private fun releaseAudioPlayback() {
+        audioStateJob?.cancel()
+        audioStateJob = null
+        audioController?.release()
+        audioController = null
+        _audioState.value = AudioPlaybackState()
+    }
+
+    private fun onAudioSleepTimerExpired() {
+        if (_state.value.screen is Screen.AudioPreview) goBack()
+        Toast.makeText(getApplication<Application>(), "定时结束，已停止播放", Toast.LENGTH_SHORT).show()
+    }
+
     fun goBack() = navigateBack(_state.value, ::openNetworkHub, ::openLocal, { sourceKey, path ->
         viewModelScope.launch { openBrowser(sourceKey, path) }
     }) { state ->
@@ -624,18 +720,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun prepareMedia(item: FileItem, isAudio: Boolean, items: List<FileItem>) {
         val source = sources[item.handle.sourceKey] ?: return showError("文件源不存在")
-        val screen: Screen = if (isAudio) Screen.AudioPreview(item.handle.sourceKey, item.handle.path, item.name)
-            else Screen.VideoPreview(item.handle.sourceKey, item.handle.path, item.name)
+        if (isAudio) {
+            prepareAudio(source, item, items)
+            return
+        }
+        val screen: Screen = Screen.VideoPreview(item.handle.sourceKey, item.handle.path, item.name)
         previewJob?.cancel()
         _state.update { it.copy(screen = screen, previewItems = items, preview = PreviewState(loading = true)) }
         previewJob = viewModelScope.launch {
             try {
-                val extension = if (isAudio) "lrc" else "srt"
-                val companion = companionFile(item, extension)
+                val companion = companionFile(item, "srt")
                 val timedText = companion?.let {
                     val bytes = source.readPrefix(it.handle.path, 1024 * 1024 + 1)
                     val text = bytes.take(1024 * 1024).toByteArray().toString(Charsets.UTF_8)
-                    if (isAudio) parseLrc(text) else parseSrt(text)
+                    parseSrt(text)
                 }.orEmpty()
                 if (_state.value.screen == screen) _state.update {
                     it.copy(preview = PreviewState(media = StreamingMedia(source, item), timedText = timedText))
@@ -644,6 +742,54 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 throw error
             } catch (error: Exception) {
                 if (_state.value.screen == screen) _state.update { it.copy(preview = PreviewState(error = readable(error))) }
+            }
+        }
+    }
+
+    /**
+     * 音频分支：立即展示播放器并开始播放，封面与歌词随后异步补齐。
+     */
+    private fun prepareAudio(source: FileSource, item: FileItem, items: List<FileItem>) {
+        val screen = Screen.AudioPreview(item.handle.sourceKey, item.handle.path, item.name)
+        val media = StreamingMedia(source, item)
+        previewJob?.cancel()
+        _state.update {
+            it.copy(
+                screen = screen,
+                previewItems = items,
+                preview = PreviewState(media = media, lyricsLoading = true),
+            )
+        }
+        ensureAudioController().load(media)
+        previewJob = viewModelScope.launch {
+            try {
+                val cover = thumbnails.thumbnailFile(source, item)
+                if (cover != null && _state.value.screen == screen) {
+                    _state.update { it.copy(preview = it.preview.copy(cover = cover)) }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // 封面失败不影响播放
+            }
+            // 歌词异常不写入 preview.error，按无歌词处理。
+            val lyrics = try {
+                audioLyrics.load(source, item, companionFile(item, "lrc"))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            if (_state.value.screen == screen) {
+                _state.update {
+                    it.copy(
+                        preview = it.preview.copy(
+                            timedText = lyrics?.cues.orEmpty(),
+                            lyricsLoading = false,
+                            lyricsSource = lyrics?.source?.label?.takeIf { label -> label.isNotBlank() },
+                        ),
+                    )
+                }
             }
         }
     }
@@ -684,6 +830,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        releaseAudioPlayback()
         browserJob?.cancel()
         previewJob?.cancel()
         cancelThumbnailRequests()
