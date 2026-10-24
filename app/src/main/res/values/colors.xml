@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与 TvColors 保持一致的窗口级颜色，仅用于主题/窗口装饰。 -->
+    <color name="tv_background">#0B121A</color>
+    <color name="tv_focus">#FFC857</color>
+    <color name="tv_panel">#101A26</color>
+</resources>

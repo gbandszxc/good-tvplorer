@@ -3,6 +3,12 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
         <item name="android:windowFullscreen">true</item>
-        <item name="android:windowBackground">#101418</item>
+        <item name="android:windowBackground">@color/tv_background</item>
+        <item name="android:statusBarColor">@color/tv_background</item>
+        <item name="android:navigationBarColor">@color/tv_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:colorAccent">@color/tv_focus</item>
+        <item name="android:windowContentTransitions">false</item>
     </style>
 </resources>
