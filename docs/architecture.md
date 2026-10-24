@@ -146,7 +146,7 @@ SMB 连接信息由 `SmbConnectionRepository` 保存到统一 Room 数据库。�
 - **播放器归属**：`MainViewModel` 持有会话级 `AudioPlaybackController`，内部只有一个 Media3 `ExoPlayer` 实例，音频属性配置为音乐并启用拔出耳机自动暂停；首次打开音频时创建，离开音频页或 ViewModel 清理时释放。UI 只订阅 `audioState` 并派发动作，不再自行创建播放器。
 - **队列与模式**：播放队列复用当前目录中同类型、当前排序的条目；`advanceAudioQueue` 通过 `nextQueueIndex` / `previousQueueIndex` 计算目标下标，实现顺序播放、单曲循环、列表循环和随机播放。播放器进入 `STATE_ENDED` 时触发自动续播，顺序播放到末尾即停止。
 - **歌词**：`AudioLyricsRepository` 先读取同目录同名 `.lrc`（最多 1 MiB），为空时再解析音频头部（最多 512 KiB）的内嵌歌词（ID3v2.3/2.4 `USLT`、FLAC Vorbis `LYRICS` / `UNSYNCEDLYRICS`）；文本按 UTF-8 BOM、UTF-16 BOM、严格 UTF-8、GB18030 的顺序解码。含时间标签的文本解析为 LRC 行并支持 `[offset:±毫秒]`，内嵌纯文本降级为单行。
-- **封面**：`ThumbnailRepository.audioCover` 优先读取同目录的 `cover` / `folder` / `front` / `albumart` / `album` / `artwork` 图片（按目录缓存字节，同一专辑只读一次）；其次读取内嵌封面：先读 256 KiB 标签前缀，FLAC 按 `PICTURE` 块头声明精确读取块体，MP3 按 ID3 标签长度读取 `APIC`/`PIC`，避免 `MediaMetadataRetriever` 扫描整文件；其他容器仍回退到系统解析器。结果降采样到最长边 1280 后按文件 key 以 JPEG 缓存在 `covers/`。
+- **封面**：`ThumbnailRepository.audioCover` 优先读取同目录的 `cover` / `folder` / `front` / `albumart` / `album` / `artwork` 图片（按目录缓存字节，同一专辑只读一次）；其次读取内嵌封面：先读 16 KiB 文件头，FLAC 沿元数据块头链表逐块跳转（每次只读 4 字节块头，按 `PICTURE` 块声明精确读取块体，不受 padding/seektable 大小影响），MP3 按 ID3 标签长度读取 `APIC`/`PIC`，避免 `MediaMetadataRetriever` 扫描整文件；其他容器仍回退到系统解析器。结果降采样到最长边 1280 后按文件 key 以 JPEG 缓存在 `covers/`。
 - **会话状态**：播放模式与定时退出只保存在 `AudioPlaybackController` 的内存状态中，不写入 Room。定时器按墙上时钟计时，暂停播放期间继续倒计时；到期暂停并停止播放、返回文件列表。
 - **当前范围**：不含 MediaSession、前台服务、后台播放与通知栏控制；如需离开音频页后继续播放，应单独立项。
 
