@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,13 +26,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.github.gbandszxc.goodtvplorer.R
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvSeekBar
 import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
 import com.github.gbandszxc.goodtvplorer.viewmodel.PreviewState
 import java.io.File
@@ -72,8 +70,6 @@ import java.util.concurrent.TimeUnit
 
 /** 项目统一的焦点描边色，与 TvButton 保持一致。 */
 private val FocusRingColor = Color(0xFFFFE3A1)
-
-private const val SEEK_STEP_MS = 10_000L
 
 private enum class AudioOverlay { None, Cover, Lyrics }
 
@@ -97,13 +93,17 @@ fun AudioPreview(
     val playFocus = remember { FocusRequester() }
     val coverFocus = remember { FocusRequester() }
     val lyricsButtonFocus = remember { FocusRequester() }
+    val sleepTimerFocus = remember { FocusRequester() }
 
     val hasMedia = state.media != null
     LaunchedEffect(hasMedia) { if (hasMedia) playFocus.requestFocus() }
-    // 覆盖层关闭后在下一次组合中恢复焦点，避免在覆盖层仍持有焦点时抢先请求。
-    LaunchedEffect(overlay, pendingFocus) {
-        if (overlay == AudioOverlay.None) {
-            pendingFocus?.requestFocus()
+    // 覆盖层或定时弹窗关闭后在下一次组合中恢复焦点，避免在覆盖层仍持有焦点时抢先请求。
+    // 弹窗拥有独立窗口，关闭时主窗口的 Compose 焦点整体丢失（实测 0 个 focused 节点），
+    // 不显式恢复的话后续按键会被系统安置到任意控件。
+    LaunchedEffect(overlay, showSleepTimer, pendingFocus) {
+        if (overlay == AudioOverlay.None && !showSleepTimer) {
+            // 媒体在弹窗/覆盖层打开期间被移除时目标按钮可能已不在组合中，恢复失败则交给系统焦点救援
+            runCatching { pendingFocus?.requestFocus() }
             pendingFocus = null
         }
     }
@@ -111,6 +111,12 @@ fun AudioPreview(
     fun closeOverlay(restore: FocusRequester) {
         pendingFocus = restore
         overlay = AudioOverlay.None
+    }
+
+    // 定时弹窗经 Back、取消或选择档位关闭后，焦点统一回到「定时退出」按钮
+    fun closeSleepTimer() {
+        pendingFocus = sleepTimerFocus
+        showSleepTimer = false
     }
 
     BackHandler(enabled = overlay == AudioOverlay.Cover) { closeOverlay(coverFocus) }
@@ -160,6 +166,7 @@ fun AudioPreview(
                     playFocus = playFocus,
                     coverFocus = coverFocus,
                     lyricsButtonFocus = lyricsButtonFocus,
+                    sleepTimerFocus = sleepTimerFocus,
                     onOpenCover = { overlay = AudioOverlay.Cover },
                     onOpenLyrics = { overlay = AudioOverlay.Lyrics },
                     onOpenSleepTimer = { showSleepTimer = true },
@@ -191,13 +198,13 @@ fun AudioPreview(
             remainingMs = audio.sleepTimerRemainingMs,
             onSelectMinutes = {
                 actions.onStartSleepTimer(it)
-                showSleepTimer = false
+                closeSleepTimer()
             },
             onCancelTimer = {
                 actions.onCancelSleepTimer()
-                showSleepTimer = false
+                closeSleepTimer()
             },
-            onDismiss = { showSleepTimer = false },
+            onDismiss = { closeSleepTimer() },
         )
     }
 }
@@ -211,12 +218,14 @@ private fun AudioBody(
     playFocus: FocusRequester,
     coverFocus: FocusRequester,
     lyricsButtonFocus: FocusRequester,
+    sleepTimerFocus: FocusRequester,
     onOpenCover: () -> Unit,
     onOpenLyrics: () -> Unit,
     onOpenSleepTimer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    val seekFocus = remember { FocusRequester() }
     Column(modifier.fillMaxWidth()) {
         Row(
             Modifier
@@ -245,11 +254,17 @@ private fun AudioBody(
         }
         Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                AudioSeekBar(
+                TvSeekBar(
                     positionMs = audio.positionMs,
                     durationMs = audio.durationMs,
                     onSeek = actions.onSeek,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(seekFocus)
+                        .focusProperties {
+                            up = coverFocus
+                            down = playFocus
+                        },
                 )
                 Spacer(Modifier.width(16.dp))
                 Text(
@@ -267,21 +282,36 @@ private fun AudioBody(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    TvButton("上一首", onClick = actions.onPrevious)
+                    TvButton(
+                        text = "上一首",
+                        modifier = Modifier.focusProperties { up = seekFocus },
+                        onClick = actions.onPrevious,
+                    )
                     TvButton(
                         text = if (audio.playing) "暂停" else "播放",
                         modifier = Modifier.focusRequester(playFocus).focusProperties { up = coverFocus },
                         onClick = actions.onTogglePlayPause,
                     )
-                    TvButton("下一首", onClick = actions.onNext)
-                    TvButton(audio.playMode.label, onClick = actions.onCyclePlayMode)
+                    TvButton(
+                        text = "下一首",
+                        modifier = Modifier.focusProperties { up = seekFocus },
+                        onClick = actions.onNext,
+                    )
+                    TvButton(
+                        text = audio.playMode.label,
+                        modifier = Modifier.focusProperties { up = seekFocus },
+                        onClick = actions.onCyclePlayMode,
+                    )
                     TvButton(
                         text = sleepTimerLabel(audio.sleepTimerRemainingMs),
+                        modifier = Modifier.focusRequester(sleepTimerFocus).focusProperties { up = seekFocus },
                         onClick = onOpenSleepTimer,
                     )
                     TvButton(
                         text = "全屏歌词",
-                        modifier = Modifier.focusRequester(lyricsButtonFocus),
+                        modifier = Modifier
+                            .focusRequester(lyricsButtonFocus)
+                            .focusProperties { up = seekFocus },
                         onClick = onOpenLyrics,
                     )
                 }
@@ -361,100 +391,22 @@ private fun CoverPane(
     }
 }
 
-@Composable
-private fun AudioSeekBar(
-    positionMs: Long,
-    durationMs: Long,
-    onSeek: (Long) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colorScheme = MaterialTheme.colorScheme
-    var focused by remember { mutableStateOf(false) }
-    var dragging by remember { mutableStateOf(false) }
-    var previewMs by remember { mutableLongStateOf(positionMs) }
-    val borderWidth by animateDpAsState(
-        if (focused) 3.dp else 1.dp,
-        animationSpec = tween(160),
-        label = "seek-border",
-    )
-    val borderColor by animateColorAsState(
-        if (focused) FocusRingColor else colorScheme.outlineVariant,
-        animationSpec = tween(160),
-        label = "seek-border-color",
-    )
-    val displayPosition = if (dragging) previewMs else positionMs
-    Box(
-        modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (focused) colorScheme.surface else colorScheme.surfaceVariant)
-            .border(borderWidth, borderColor, RoundedCornerShape(8.dp))
-            .onFocusChanged { focused = it.isFocused }
-            .focusable()
-            .semantics { contentDescription = "播放进度，左右键或触屏拖动调整" }
-            .pointerInput(durationMs) {
-                if (durationMs <= 0) return@pointerInput
-                detectTapGestures { offset ->
-                    onSeek(seekPosition(durationMs, offset.x, size.width))
-                }
-            }
-            .pointerInput(durationMs) {
-                if (durationMs <= 0) return@pointerInput
-                detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        dragging = true
-                        previewMs = seekPosition(durationMs, offset.x, size.width)
-                    },
-                    onDragEnd = {
-                        onSeek(previewMs)
-                        dragging = false
-                    },
-                    onDragCancel = { dragging = false },
-                ) { change, _ ->
-                    change.consume()
-                    previewMs = seekPosition(durationMs, change.position.x, size.width)
-                }
-            }
-            .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown || durationMs <= 0) return@onPreviewKeyEvent false
-                when (event.key) {
-                    Key.DirectionLeft -> {
-                        onSeek((positionMs - SEEK_STEP_MS).coerceAtLeast(0L))
-                        true
-                    }
-                    Key.DirectionRight -> {
-                        onSeek((positionMs + SEEK_STEP_MS).coerceAtMost(durationMs))
-                        true
-                    }
-                    else -> false
-                }
-            }
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        LinearProgressIndicator(
-            progress = {
-                if (durationMs <= 0) 0f else (displayPosition.toFloat() / durationMs).coerceIn(0f, 1f)
-            },
-            modifier = Modifier.fillMaxWidth(),
-            color = colorScheme.primary,
-            trackColor = colorScheme.outlineVariant,
-        )
-    }
-}
-
 /**
- * 全屏覆盖层的焦点根节点：打开时独占焦点，确认键与触屏点击均关闭，
+ * 全屏覆盖层的焦点根节点：打开时独占焦点，或把初始焦点交给 [contentFocus] 指定的内部控件，
  * 避免方向键落回被覆盖的底层控件。
+ * 未传 [contentFocus] 时（如封面层）确认键由本层消费并关闭；
+ * 传入 [contentFocus] 时（如歌词层「返回」按钮）确认键穿透给内部控件自行处理，
+ * 否则本层的 onPreviewKeyEvent 会在 KeyUp 抢先关闭覆盖层，内部按钮无法被独立确认。
  */
 @Composable
 private fun FullscreenLayer(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    contentFocus: FocusRequester? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(Unit) { (contentFocus ?: focusRequester).requestFocus() }
     Box(
         modifier
             .fillMaxSize()
@@ -464,7 +416,7 @@ private fun FullscreenLayer(
                 val isOk = event.key == Key.DirectionCenter ||
                     event.key == Key.Enter ||
                     event.key == Key.NumPadEnter
-                if (event.type == KeyEventType.KeyUp && isOk) {
+                if (event.type == KeyEventType.KeyUp && isOk && contentFocus == null) {
                     onClose()
                     true
                 } else {
@@ -570,7 +522,8 @@ private fun LyricsOverlay(
     actions: AudioPlayerActions,
     onClose: () -> Unit,
 ) {
-    FullscreenLayer(onClose = onClose) {
+    val lyricsBackFocus = remember { FocusRequester() }
+    FullscreenLayer(onClose = onClose, contentFocus = lyricsBackFocus) {
         AudioLyricsFullscreen(
             title = title,
             cues = state.timedText,
@@ -578,6 +531,7 @@ private fun LyricsOverlay(
             loading = state.lyricsLoading,
             onSeek = actions.onSeek,
             onBack = onClose,
+            backButtonFocus = lyricsBackFocus,
             modifier = Modifier.fillMaxSize(),
         )
     }

@@ -29,6 +29,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -106,6 +108,7 @@ fun AudioLyricsFullscreen(
     loading: Boolean,
     onSeek: (Long) -> Unit,
     onBack: () -> Unit,
+    backButtonFocus: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -128,7 +131,11 @@ fun AudioLyricsFullscreen(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.width(20.dp))
-                TvButton("返回", onClick = onBack)
+                TvButton(
+                    text = "返回",
+                    modifier = Modifier.focusRequester(backButtonFocus),
+                    onClick = onBack,
+                )
             }
             if (cues.isEmpty()) {
                 Box(
