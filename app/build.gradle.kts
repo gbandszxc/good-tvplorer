@@ -10,7 +10,9 @@ plugins {
 
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
-val appVersionName = "0.1.1"
+// CI 发布流水线通过 -PappVersionName/-PappVersionCode 注入版本信息；缺省值保持本地构建行为不变
+val appVersionName = (project.findProperty("appVersionName") as String?) ?: "0.1.1"
+val appVersionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 2
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
@@ -23,7 +25,7 @@ android {
         applicationId = "com.github.gbandszxc.goodtvplorer"
         minSdk = 23
         targetSdk = 36
-        versionCode = 2
+        versionCode = appVersionCode
         versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -57,7 +59,7 @@ android {
         abi {
             isEnable = true
             reset()
-            include("armeabi-v7a", "arm64-v8a")
+            include("armeabi-v7a", "arm64-v8a", "x86")
             isUniversalApk = false
         }
     }
