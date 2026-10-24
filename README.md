@@ -32,7 +32,7 @@ Good TVplorer 让你在电视上用同一套操作浏览本机文件和 SMB / NA
 
 ## 安装与上手
 
-项目当前尚未发布预编译 APK。请先按[构建说明](docs/architecture.md#构建与验证)生成 Debug APK，并安装到设备。
+从 [GitHub Releases](https://github.com/gbandszxc/good-tvplorer/releases) 下载与设备架构匹配的 APK（`arm64-v8a` / `armeabi-v7a` / `x86`）安装；开发调试可按[构建说明](docs/architecture.md#构建与验证)自行打包。
 
 1. 首次启动时，根据系统提示授予媒体文件访问权限。
 2. 使用顶部 Dock 在“本机”和“网络”之间切换。

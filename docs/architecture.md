@@ -193,14 +193,29 @@ java.home=C\:\\path\\to\\jdk-17
 Debug 使用 `com.github.gbandszxc.goodtvplorer.debug` application ID，可与 Release 版本同时安装。Debug APK 位于 `app/build/outputs/apk/debug/`。
 设备测试脚本只使用 `adb install -r` 覆盖安装并直接调用 instrumentation，不执行 uninstall。
 
-Release 默认启用 R8 代码压缩、混淆和资源压缩，并按 ARM ABI 输出独立 APK：
+Release 默认启用 R8 代码压缩、混淆和资源压缩，并按 ARM / x86 ABI 输出独立 APK：
 
 ```powershell
 .\gradlew.bat :app:assembleRelease
 .\gradlew.bat :app:bundleRelease
 ```
 
+版本号与 versionCode 可通过 Gradle 属性注入，不传时使用 `app/build.gradle.kts` 中的默认值：
+
+```powershell
+.\gradlew.bat :app:assembleRelease -PappVersionName=0.1.2 -PappVersionCode=1002
+```
+
 发布后应保存 `app/build/outputs/mapping/release/mapping.txt`，用于还原线上崩溃堆栈。
+
+### GitHub Actions 发布
+
+`.github/workflows/release.yml` 提供手动触发的发布流水线（Actions → Release → Run workflow）：
+
+- 输入版本号（三段数字，如 `0.1.2`）和可选的 Release 说明，打包 `arm64-v8a`、`armeabi-v7a`、`x86` 三个签名 Release APK。
+- APK 命名与本地一致：`good-tvplorer-release-<版本号>-<abi>.apk`；versionCode 由版本号推导（`主 * 1000000 + 次 * 1000 + 修订`）。
+- 以版本号作为 tag 创建 Release，标题为版本号；同一版本号重新执行时仅覆盖同名附件，不修改已有的 Release 说明。
+- 签名信息通过仓库 secrets 注入（`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`），不得提交密钥文件与口令。
 
 ### 项目结构
 
