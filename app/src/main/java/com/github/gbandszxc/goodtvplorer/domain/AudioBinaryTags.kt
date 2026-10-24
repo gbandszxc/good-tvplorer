@@ -13,6 +13,9 @@ internal object AudioBinaryTags {
     /** 内嵌封面：MIME 可能缺失（部分标签写空），此时按数据头嗅探。 */
     data class Picture(val mimeType: String?, val data: ByteArray)
 
+    /** FLAC 元数据块头：只描述声明长度，不要求块体存在。 */
+    data class FlacBlockHeader(val type: Int, val last: Boolean, val length: Int)
+
     fun id3Frames(bytes: ByteArray): List<Frame> {
         if (!startsWithAscii(bytes, "ID3") || bytes.size < 10) return emptyList()
         val version = bytes[3].toInt() and 0xff
@@ -165,6 +168,20 @@ internal object AudioBinaryTags {
             offset = end
         }
         return blocks
+    }
+
+    /**
+     * 解析 `bytes[offset..offset+4)` 的 FLAC 块头；越界或长度非法返回 null。
+     * 块头自带本块长度，调用方可据此跳到下一块而无需读取块体。
+     */
+    fun flacBlockHeader(bytes: ByteArray, offset: Int = 0): FlacBlockHeader? {
+        if (offset < 0 || offset + 4 > bytes.size) return null
+        val header = bytes[offset].toInt() and 0xff
+        return FlacBlockHeader(
+            type = header and 0x7f,
+            last = header and 0x80 != 0,
+            length = u24(bytes, offset + 1),
+        )
     }
 
     /** 解析 FLAC PICTURE 块体（type=6 的 payload，或 Base64 解码后的 METADATA_BLOCK_PICTURE）。 */

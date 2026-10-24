@@ -101,8 +101,9 @@ class ThumbnailRepository internal constructor(
     /**
      * 只读取标签区解析内嵌封面，避免 MediaMetadataRetriever 在 SMB 上随机读取整段数据。
      * 未覆盖的容器（M4A/Ogg/WAV 等）返回 null，交给 MediaMetadataRetriever 兜底。
+     * internal 供单测直接构造 fake FileSource 验证局部读取。
      */
-    private suspend fun embeddedCoverFast(source: FileSource, item: FileItem): ByteArray? = try {
+    internal suspend fun embeddedCoverFast(source: FileSource, item: FileItem): ByteArray? = try {
         val path = item.handle.path
         val prefix = source.readPrefix(path, TAG_PREFIX_BYTES)
         when {
@@ -117,33 +118,70 @@ class ThumbnailRepository internal constructor(
         null
     }
 
+    /**
+     * FLAC 元数据块是链表结构，块头自带本块长度，因此按块头逐块跳转：
+     * 只读块头（前缀内切片或精确读 4 字节）即可跳过任意大小的 padding/seektable，
+     * 不会因块体超出前缀而放弃。
+     */
     private suspend fun flacEmbeddedCover(source: FileSource, path: String, prefix: ByteArray): ByteArray? {
-        val blocks = AudioBinaryTags.flacBlockHeaders(prefix)
-        val pictureBlock = blocks.firstOrNull { it.type == FLAC_PICTURE_BLOCK }
-        if (pictureBlock != null) {
-            val body = readFlacBlock(source, path, prefix, pictureBlock, MAX_EMBEDDED_PICTURE_BYTES) ?: return null
-            return AudioBinaryTags.flacPicture(body)?.data?.takeIf(ByteArray::isNotEmpty)
+        var offset = 4
+        var visited = 0
+        while (visited++ < MAX_FLAC_METADATA_BLOCKS) {
+            val header = readFlacHeaderAt(source, path, prefix, offset) ?: return null
+            val start = offset + 4L
+            val end = start + header.length
+            if (end > MAX_FLAC_BLOCK_BYTES) return null
+            when (header.type) {
+                FLAC_PICTURE_BLOCK -> {
+                    val body = readFlacBlock(source, path, prefix, start, end, MAX_EMBEDDED_PICTURE_BYTES) ?: return null
+                    val picture = AudioBinaryTags.flacPicture(body) ?: return null
+                    return picture.data.takeIf(ByteArray::isNotEmpty)
+                }
+                FLAC_VORBIS_COMMENT_BLOCK -> {
+                    // 注释块读不到或没有封面时继续向后找 PICTURE 块，而不是直接放弃。
+                    val body = readFlacBlock(source, path, prefix, start, end, MAX_VORBIS_COMMENT_BYTES)
+                    val encoded = body?.let { AudioBinaryTags.vorbisComments(it)["METADATA_BLOCK_PICTURE"] }
+                    if (encoded != null) {
+                        val decoded = try {
+                            Base64.decode(encoded, Base64.DEFAULT)
+                        } catch (_: IllegalArgumentException) {
+                            null
+                        }
+                        val picture = decoded?.let(AudioBinaryTags::flacPicture)
+                        if (picture != null && picture.data.isNotEmpty()) return picture.data
+                    }
+                }
+            }
+            if (header.last) return null
+            if (end <= offset) return null
+            offset = end.toInt()
         }
-        // 部分编码器把封面 Base64 存进 Vorbis Comment 的 METADATA_BLOCK_PICTURE。
-        val commentBlock = blocks.firstOrNull { it.type == FLAC_VORBIS_COMMENT_BLOCK } ?: return null
-        val body = readFlacBlock(source, path, prefix, commentBlock, MAX_VORBIS_COMMENT_BYTES) ?: return null
-        val encoded = AudioBinaryTags.vorbisComments(body)["METADATA_BLOCK_PICTURE"] ?: return null
-        val decoded = try {
-            Base64.decode(encoded, Base64.DEFAULT)
-        } catch (_: IllegalArgumentException) {
-            return null
-        }
-        return AudioBinaryTags.flacPicture(decoded)?.data?.takeIf(ByteArray::isNotEmpty)
+        return null
     }
 
-    /** 块体已在前缀内直接切片，否则按块头声明的偏移/长度精确读取；读取不完整返回 null。 */
-    private suspend fun readFlacBlock(source: FileSource, path: String, prefix: ByteArray, block: AudioBinaryTags.Block, maxBytes: Int): ByteArray? {
-        val length = block.end - block.start
-        if (length !in 1..maxBytes) return null
-        val body = if (block.end <= prefix.size) {
-            prefix.copyOfRange(block.start, block.end)
+    /** 读取指定偏移的 FLAC 块头：前缀内有则直接解析，否则只向源读取 4 字节。 */
+    private suspend fun readFlacHeaderAt(source: FileSource, path: String, prefix: ByteArray, offset: Int): AudioBinaryTags.FlacBlockHeader? = try {
+        if (offset >= 0 && offset + 4 <= prefix.size) {
+            AudioBinaryTags.flacBlockHeader(prefix, offset)
         } else {
-            source.readRange(path, block.start.toLong(), length)
+            source.readRange(path, offset.toLong(), FLAC_BLOCK_HEADER_BYTES)
+                .takeIf { it.size == FLAC_BLOCK_HEADER_BYTES }
+                ?.let { AudioBinaryTags.flacBlockHeader(it, 0) }
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
+
+    /** 块体完全在前缀内直接切片，否则按块头声明的偏移/长度精确读取；读取不完整返回 null。 */
+    private suspend fun readFlacBlock(source: FileSource, path: String, prefix: ByteArray, start: Long, end: Long, maxBytes: Int): ByteArray? {
+        val length = end - start
+        if (length !in 1..maxBytes.toLong()) return null
+        val body = if (end <= prefix.size) {
+            prefix.copyOfRange(start.toInt(), end.toInt())
+        } else {
+            source.readRange(path, start, length.toInt())
         }
         return body.takeIf { it.size >= length }
     }
@@ -271,10 +309,13 @@ class ThumbnailRepository internal constructor(
     private companion object {
         const val EXIF_PREFIX_BYTES = 256 * 1024
         const val COVER_PREFIX_BYTES = 8 * 1024 * 1024
-        const val TAG_PREFIX_BYTES = 256 * 1024
+        const val TAG_PREFIX_BYTES = 16 * 1024
         const val MAX_EMBEDDED_PICTURE_BYTES = 16 * 1024 * 1024
         const val MAX_ID3_TAG_BYTES = 16 * 1024 * 1024
         const val MAX_VORBIS_COMMENT_BYTES = 4 * 1024 * 1024
+        const val MAX_FLAC_BLOCK_BYTES = 64L * 1024 * 1024
+        const val MAX_FLAC_METADATA_BLOCKS = 128
+        const val FLAC_BLOCK_HEADER_BYTES = 4
         const val COVER_MAX_EDGE_PX = 1280
         const val FLAC_PICTURE_BLOCK = 6
         const val FLAC_VORBIS_COMMENT_BLOCK = 4
