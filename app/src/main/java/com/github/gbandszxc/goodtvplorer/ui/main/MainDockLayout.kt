@@ -345,7 +345,7 @@ private fun SideDock(
             onConnections,
         )
         Spacer(Modifier.height(8.dp))
-        DockIconButton(R.drawable.ic_settings, "设置", navigation.settings, navigation.networkHub, FocusRequester.Cancel, dockRight, navigation, onSettings)
+        DockIconButton(R.drawable.ic_settings, "设置", navigation.settings, navigation.connections, FocusRequester.Cancel, dockRight, navigation, onSettings)
     }
 }
 
