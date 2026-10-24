@@ -20,6 +20,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 
@@ -29,6 +30,8 @@ class ThumbnailRepository internal constructor(
 ) {
     // ponytail: 浏览百万唯一文件时改用带引用计数的锁池；常规目录规模下永久保留最简单可靠。
     private val imageLocks = ConcurrentHashMap<String, Mutex>()
+    // 目录 → 命中封面文件名；空串表示该目录已确认无封面。仓库实例生命周期内有效。
+    private val siblingCovers = ConcurrentHashMap<String, String>()
 
     constructor(context: Context) : this(context.cacheDir, ::createThumbnail)
 
@@ -85,12 +88,47 @@ class ThumbnailRepository internal constructor(
         val target = File(cacheDir, "covers/${hash(key)}.jpg")
         if (target.exists() && target.length() > 0L) return target
         return runCatching {
-            val picture = withRetriever(source, item) { it.embeddedPicture }
+            val picture = siblingCover(source, item) ?: withRetriever(source, item) { it.embeddedPicture }
             if (picture == null) null else target.also {
                 it.parentFile?.mkdirs()
                 it.writeBytes(picture)
             }
         }.getOrNull()
+    }
+
+    /** 同目录封面文件优先于内嵌封面；每个目录只列举一次并缓存结论。 */
+    private suspend fun siblingCover(source: FileSource, item: FileItem): ByteArray? {
+        val parentPath = item.handle.path.substringBeforeLast('/', "")
+        val directoryKey = "${item.handle.sourceKey}|$parentPath"
+        siblingCovers[directoryKey]?.let { cached ->
+            return cached.takeIf { it.isNotEmpty() }?.let { readSiblingCover(source, parentPath, it) }
+        }
+        // 列举失败不缓存结论，避免一次网络抖动把目录永久判定为无封面。
+        val names = runCatching { source.list(parentPath) }.getOrNull()?.map(FileItem::name) ?: return null
+        var chosen = ""
+        var bytes: ByteArray? = null
+        for (name in siblingCoverCandidates(names)) {
+            val data = readSiblingCover(source, parentPath, name)
+            if (data != null) {
+                chosen = name
+                bytes = data
+                break
+            }
+        }
+        siblingCovers[directoryKey] = chosen
+        return bytes
+    }
+
+    private suspend fun readSiblingCover(source: FileSource, parentPath: String, name: String): ByteArray? {
+        val path = if (parentPath.isEmpty()) name else "$parentPath/$name"
+        return runCatching { source.readPrefix(path, COVER_PREFIX_BYTES) }.getOrNull()?.takeIf(::isImage)
+    }
+
+    private fun isImage(bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        return bounds.outWidth > 0 && bounds.outHeight > 0
     }
 
     private suspend fun videoFrame(source: FileSource, item: FileItem, key: String): File? {
@@ -122,6 +160,7 @@ class ThumbnailRepository internal constructor(
 
     private companion object {
         const val EXIF_PREFIX_BYTES = 256 * 1024
+        const val COVER_PREFIX_BYTES = 8 * 1024 * 1024
         const val VIDEO_FRAME_TIME_US = 3_000_000L
 
         fun createThumbnail(cachedImage: File, target: File): File? {
@@ -246,3 +285,17 @@ private fun parseExifThumbnail(bytes: ByteArray, start: Int, end: Int): ByteArra
     if (thumbnailEnd < thumbnailStart || bytes[thumbnailStart] != 0xff.toByte() || bytes.getOrNull(thumbnailStart + 1) != 0xd8.toByte()) return null
     return bytes.copyOfRange(thumbnailStart, thumbnailEnd)
 }
+
+private val SIBLING_COVER_STEMS = listOf("cover", "folder", "front", "albumart", "album", "artwork")
+private val SIBLING_COVER_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp")
+
+/** 按优先级列出同目录中可作为封面的文件名（保留原始大小写）。 */
+internal fun siblingCoverCandidates(names: List<String>): List<String> = SIBLING_COVER_STEMS.mapNotNull { stem ->
+    names.firstOrNull { name ->
+        val base = name.substringBeforeLast('.', name)
+        val extension = name.substringAfterLast('.', "")
+        base.equals(stem, ignoreCase = true) && extension.lowercase(Locale.ROOT) in SIBLING_COVER_EXTENSIONS
+    }
+}
+
+internal fun pickSiblingCoverName(names: List<String>): String? = siblingCoverCandidates(names).firstOrNull()

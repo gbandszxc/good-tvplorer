@@ -4,7 +4,6 @@ import android.graphics.BitmapFactory
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.data.FileKind
 import com.github.gbandszxc.goodtvplorer.data.FileSource
-import java.nio.charset.Charset
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +46,7 @@ class PreviewMetadataRepository {
     }
 
     private fun audioMetadata(bytes: ByteArray, size: Long?, name: String): PreviewMetadata {
-        if (bytes.startsWithAscii("fLaC")) return flacMetadata(bytes, size)
+        if (AudioBinaryTags.startsWithAscii(bytes, "fLaC")) return flacMetadata(bytes, size)
         val metadata = mp3Metadata(bytes, size)
         return if (metadata.entries.isEmpty()) PreviewMetadata(listOf(PreviewMetadataEntry("格式", extension(name)))) else metadata
     }
@@ -64,7 +63,7 @@ class PreviewMetadataRepository {
 
     private fun mp3Metadata(bytes: ByteArray, size: Long?): PreviewMetadata {
         val tags = parseId3(bytes)
-        val firstFrame = if (bytes.startsWithAscii("ID3") && bytes.size >= 10) 10 + synchsafeInt(bytes, 6) else 0
+        val firstFrame = if (AudioBinaryTags.startsWithAscii(bytes, "ID3") && bytes.size >= 10) 10 + AudioBinaryTags.synchsafeInt(bytes, 6) else 0
         val bitrate = findMp3Bitrate(bytes, firstFrame)
         return PreviewMetadata(buildList {
             bitrate?.let { rate ->
@@ -83,27 +82,17 @@ class PreviewMetadataRepository {
 
     private fun flacMetadata(bytes: ByteArray, size: Long?): PreviewMetadata {
         if (bytes.size < 42) return PreviewMetadata()
-        var offset = 4
         var duration: Long? = null
         val tags = mutableMapOf<String, String>()
-        while (offset + 4 <= bytes.size) {
-            val header = bytes[offset].toInt() and 0xff
-            val last = header and 0x80 != 0
-            val type = header and 0x7f
-            val length = u24(bytes, offset + 1)
-            val start = offset + 4
-            val end = start + length
-            if (end > bytes.size) break
-            if (type == 0 && length >= 34) {
-                val packed = u64(bytes, start + 10)
+        for (block in AudioBinaryTags.flacBlocks(bytes)) {
+            if (block.type == 0 && block.end - block.start >= 34) {
+                val packed = AudioBinaryTags.u64(bytes, block.start + 10)
                 val rate = packed shr 44
                 val samples = packed and 0x0fff_fffffL
                 if (rate > 0 && samples > 0) duration = samples * 1_000L / rate
-            } else if (type == 4) {
-                parseVorbisComments(bytes.copyOfRange(start, end), tags)
+            } else if (block.type == 4) {
+                tags.putAll(AudioBinaryTags.vorbisComments(bytes.copyOfRange(block.start, block.end)))
             }
-            offset = end
-            if (last) break
         }
         return PreviewMetadata(buildList {
             duration?.let { value -> add(PreviewMetadataEntry("时长", formatDuration(value))) }
@@ -119,35 +108,15 @@ class PreviewMetadataRepository {
     }
 
     private fun parseId3(bytes: ByteArray): Map<String, String> {
-        if (!bytes.startsWithAscii("ID3") || bytes.size < 10) return emptyMap()
-        val version = bytes[3].toInt() and 0xff
-        if (version !in 3..4) return emptyMap()
-        val end = (10 + synchsafeInt(bytes, 6)).coerceAtMost(bytes.size)
         val tags = mutableMapOf<String, String>()
-        var offset = 10
-        while (offset + 10 <= end) {
-            val id = bytes.ascii(offset, 4)
-            if (id.any { !it.isUpperCase() && !it.isDigit() }) break
-            val length = if (version == 4) synchsafeInt(bytes, offset + 4) else u32(bytes, offset + 4).toInt()
-            val valueStart = offset + 10
-            val valueEnd = valueStart + length
-            if (length <= 0 || valueEnd > end) break
-            val key = when (id) {
+        for (frame in AudioBinaryTags.id3Frames(bytes)) {
+            val key = when (frame.id) {
                 "TIT2" -> "TITLE"; "TPE1" -> "ARTIST"; "TALB" -> "ALBUM"; "TCON" -> "GENRE"
                 "TYER", "TDRC" -> "DATE"; "TRCK" -> "TRACKNUMBER"; else -> null
-            }
-            if (key != null) decodeId3Text(bytes.copyOfRange(valueStart, valueEnd))?.let { tags[key] = it }
-            offset = valueEnd
+            } ?: continue
+            AudioBinaryTags.decodeId3Text(bytes.copyOfRange(frame.start, frame.end))?.let { tags[key] = it }
         }
         return tags
-    }
-
-    private fun decodeId3Text(bytes: ByteArray): String? {
-        if (bytes.size < 2) return null
-        val charset = when (bytes[0].toInt()) {
-            0 -> Charsets.ISO_8859_1; 1 -> Charset.forName("UTF-16"); 2 -> Charset.forName("UTF-16BE"); 3 -> Charsets.UTF_8; else -> return null
-        }
-        return bytes.copyOfRange(1, bytes.size).toString(charset).trimEnd('\u0000').takeIf(String::isNotBlank)
     }
 
     private fun findMp3Bitrate(bytes: ByteArray, start: Int): Long? {
@@ -201,34 +170,9 @@ class PreviewMetadataRepository {
         return if (size in 8..Int.MAX_VALUE.toLong() && start.toLong() + size <= end) size.toInt() else null
     }
 
-    private fun parseVorbisComments(bytes: ByteArray, tags: MutableMap<String, String>) {
-        var offset = 0
-        fun readInt(): Int? {
-            if (offset + 4 > bytes.size) return null
-            val value = (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8) or ((bytes[offset + 2].toInt() and 0xff) shl 16) or ((bytes[offset + 3].toInt() and 0xff) shl 24)
-            offset += 4
-            return value
-        }
-        val vendorLength = readInt() ?: return
-        if (vendorLength < 0 || offset + vendorLength > bytes.size) return
-        offset += vendorLength
-        val count = readInt() ?: return
-        repeat(count.coerceIn(0, 64)) {
-            val length = readInt() ?: return
-            if (length < 0 || offset + length > bytes.size) return
-            val pair = bytes.copyOfRange(offset, offset + length).toString(Charsets.UTF_8)
-            offset += length
-            val separator = pair.indexOf('=')
-            if (separator > 0) tags[pair.substring(0, separator).uppercase(Locale.ROOT)] = pair.substring(separator + 1)
-        }
-    }
-
-    private fun ByteArray.startsWithAscii(value: String): Boolean = size >= value.length && value.indices.all { this[it].toInt().toChar() == value[it] }
-    private fun ByteArray.ascii(offset: Int, length: Int): String = copyOfRange(offset, offset + length).toString(Charsets.ISO_8859_1)
-    private fun u24(bytes: ByteArray, offset: Int): Int = ((bytes[offset].toInt() and 0xff) shl 16) or ((bytes[offset + 1].toInt() and 0xff) shl 8) or (bytes[offset + 2].toInt() and 0xff)
-    private fun u32(bytes: ByteArray, offset: Int): Long = ((bytes[offset].toLong() and 0xff) shl 24) or ((bytes[offset + 1].toLong() and 0xff) shl 16) or ((bytes[offset + 2].toLong() and 0xff) shl 8) or (bytes[offset + 3].toLong() and 0xff)
-    private fun u64(bytes: ByteArray, offset: Int): Long = (u32(bytes, offset) shl 32) or u32(bytes, offset + 4)
-    private fun synchsafeInt(bytes: ByteArray, offset: Int): Int = ((bytes[offset].toInt() and 0x7f) shl 21) or ((bytes[offset + 1].toInt() and 0x7f) shl 14) or ((bytes[offset + 2].toInt() and 0x7f) shl 7) or (bytes[offset + 3].toInt() and 0x7f)
+    private fun ByteArray.ascii(offset: Int, length: Int): String = AudioBinaryTags.ascii(this, offset, length)
+    private fun u32(bytes: ByteArray, offset: Int): Long = AudioBinaryTags.u32(bytes, offset)
+    private fun u64(bytes: ByteArray, offset: Int): Long = AudioBinaryTags.u64(bytes, offset)
     private fun formatDuration(milliseconds: Long): String = TimeUnit.MILLISECONDS.toSeconds(milliseconds).let { seconds -> if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, (seconds % 3600) / 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60) }
     private fun bitrate(size: Long, durationMillis: Long): String? = durationMillis.takeIf { it > 0 }?.let { "${(size * 8_000L / it / 1_000L).coerceAtLeast(1)} kbps" }
     private fun extension(name: String): String = name.substringAfterLast('.', "文件").uppercase(Locale.ROOT)

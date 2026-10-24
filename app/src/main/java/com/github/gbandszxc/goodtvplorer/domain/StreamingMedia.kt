@@ -82,13 +82,34 @@ class FileSourceDataSource(private val media: StreamingMedia) : BaseDataSource(f
 }
 
 fun parseLrc(text: String): List<TimedTextCue> {
-    val entries = text.lineSequence().flatMap { line ->
-        val content = line.replace(LRC_TIME, "").trim()
-        LRC_TIME.findAll(line).mapNotNull { match -> lrcTime(match.groupValues)?.let { it to content } }
-    }.sortedBy(Pair<Long, String>::first).toList()
+    // `[offset:±毫秒]` 表示整体平移：正值让歌词延后，负值提前。标签行本身不是歌词。
+    val offset = LRC_OFFSET.findAll(text).lastOrNull()?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+    val entries = text.lineSequence()
+        .filterNot { LRC_OFFSET.containsMatchIn(it) }
+        .flatMap { line ->
+            val content = line.replace(LRC_TIME, "").trim()
+            LRC_TIME.findAll(line).mapNotNull { match -> lrcTime(match.groupValues)?.let { it + offset to content } }
+        }.sortedBy(Pair<Long, String>::first).toList()
     return entries.mapIndexed { index, entry ->
         TimedTextCue(entry.first, entries.getOrNull(index + 1)?.first ?: Long.MAX_VALUE, entry.second)
     }
+}
+
+/** 返回最后一个 `startMs <= positionMs` 的歌词下标；没有返回 -1。 */
+internal fun currentCueIndex(cues: List<TimedTextCue>, positionMs: Long): Int {
+    var low = 0
+    var high = cues.lastIndex
+    var result = -1
+    while (low <= high) {
+        val middle = (low + high) ushr 1
+        if (cues[middle].startMs <= positionMs) {
+            result = middle
+            low = middle + 1
+        } else {
+            high = middle - 1
+        }
+    }
+    return result
 }
 
 fun parseSrt(text: String): List<TimedTextCue> = text.replace("\r\n", "\n").trim().split(Regex("\n{2,}")).mapNotNull { block ->
@@ -102,6 +123,8 @@ fun parseSrt(text: String): List<TimedTextCue> = text.replace("\r\n", "\n").trim
 }
 
 private val LRC_TIME = Regex("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]")
+
+private val LRC_OFFSET = Regex("\\[offset:\\s*([+-]?\\d+)]", RegexOption.IGNORE_CASE)
 
 private fun lrcTime(parts: List<String>): Long? {
     val minutes = parts.getOrNull(1)?.toLongOrNull() ?: return null
