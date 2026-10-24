@@ -17,6 +17,9 @@ import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.AsyncFileReader
 import com.hierynomus.smbj.share.DiskShare
 import com.hierynomus.smbj.share.File as SmbFile
+import com.rapid7.client.dcerpc.mssrvs.ServerService
+import com.rapid7.client.dcerpc.mssrvs.dto.NetShareInfo1
+import com.rapid7.client.dcerpc.transport.SMBTransportFactories
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -133,6 +136,36 @@ internal fun smbAuthenticationContext(info: SmbConnectionInfo): AuthenticationCo
         AuthenticationContext(info.username, info.password.toCharArray(), info.domain.orEmpty())
     }
 
+/** 将来源路径拆分为目标共享名与该共享内的相对路径；连接未绑定共享时以路径首段为目标共享。 */
+internal fun resolveSmbSharePath(connectionShare: String, path: String): Pair<String, String> {
+    val share = connectionShare.trim().trim('/')
+    if (share.isNotEmpty()) return share to path.trim().trim('/')
+    val trimmed = path.trim().trim('/')
+    check(trimmed.isNotEmpty()) { "SMB 根目录需要先选择共享目录" }
+    return if ('/' in trimmed) trimmed.substringBefore('/') to trimmed.substringAfter('/') else trimmed to ""
+}
+
+internal fun smbIsDiskShareType(type: Int): Boolean = type and SMB_SHARE_TYPE_MASK == 0
+
+/** 将服务器枚举出的共享过滤为磁盘共享并按名称排序，作为来源根目录展示。 */
+internal fun smbServerShareItems(
+    shares: List<NetShareInfo1>,
+    sourceKey: String,
+    sourceKind: SourceKind,
+): List<FileItem> = shares.asSequence()
+    .filter { smbIsDiskShareType(it.type) }
+    .map { share ->
+        FileItem(
+            name = share.netName,
+            handle = FileHandle(sourceKey, sourceKind, share.netName),
+            kind = FileKind.Directory,
+            size = null,
+            modifiedAtMillis = null,
+        )
+    }
+    .sortedBy { it.name.lowercase() }
+    .toList()
+
 class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoCloseable {
     override val key = "smb:${info.id}"
     override val kind = SourceKind.Smb
@@ -154,22 +187,28 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         var generation = 0L
         var count = 0
         try {
-            withShare { current ->
-                generation = current.generation
-                current.share.list(path.trim('/')).filterNot { it.fileName == "." || it.fileName == ".." }
-                    .map { entry ->
-                        val isDirectory = (entry.fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value) != 0L
-                        val childPath = join(path, entry.fileName)
-                        FileItem(
-                            name = entry.fileName,
-                            handle = FileHandle(key, kind, childPath),
-                            kind = FileTypeDetector.detect(entry.fileName, isDirectory),
-                            size = if (isDirectory) null else entry.endOfFile,
-                            modifiedAtMillis = entry.lastWriteTime.toEpochMillis(),
-                        )
-                    }
-                    .sortedWith(compareBy<FileItem> { it.kind != FileKind.Directory }.thenBy { it.name.lowercase() })
-                    .also { count = it.size }
+            if (info.share.isBlank() && path.trim('/').isEmpty()) {
+                listServerShares(started).also { count = it.size }
+            } else {
+                val (shareName, relativePath) = resolveSmbSharePath(info.share, path)
+                withShare(shareName) { lease ->
+                    generation = lease.generation
+                    lease.share.list(relativePath)
+                        .filterNot { it.fileName == "." || it.fileName == ".." }
+                        .map { entry ->
+                            val isDirectory = (entry.fileAttributes and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value) != 0L
+                            val childPath = join(path, entry.fileName)
+                            FileItem(
+                                name = entry.fileName,
+                                handle = FileHandle(key, kind, childPath),
+                                kind = FileTypeDetector.detect(entry.fileName, isDirectory),
+                                size = if (isDirectory) null else entry.endOfFile,
+                                modifiedAtMillis = entry.lastWriteTime.toEpochMillis(),
+                            )
+                        }
+                        .sortedWith(compareBy<FileItem> { it.kind != FileKind.Directory }.thenBy { it.name.lowercase() })
+                        .also { count = it.size }
+                }
             }
         } finally {
             logPerformance("list", started, generation, path, count = count)
@@ -184,7 +223,8 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         var byteCount = 0L
         val started = System.nanoTime()
         try {
-            withOpenFile(path) { opened ->
+            val (shareName, relativePath) = resolveSmbSharePath(info.share, path)
+            withOpenFile(shareName, relativePath) { opened ->
                 generation = opened.generation
                 readRangeFully(
                     maxBytes = maxBytes,
@@ -211,11 +251,12 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         val started = System.nanoTime()
         var copiedBytes = 0L
         try {
-            val (fileSize, chunkSize) = withShare { current ->
-                current.share.getFileInformation(path.trim('/')).standardInformation.endOfFile to current.readBufferSize
+            val (shareName, relativePath) = resolveSmbSharePath(info.share, path)
+            val (fileSize, chunkSize) = withShare(shareName) { lease ->
+                lease.share.getFileInformation(relativePath).standardInformation.endOfFile to lease.readBufferSize
             }
             if (fileSize >= PIPELINED_COPY_MIN_BYTES) {
-                copyToPipelined(path, partial, fileSize, chunkSize)
+                copyToPipelined(shareName, relativePath, partial, fileSize, chunkSize)
             } else {
                 val coroutine = currentCoroutineContext()
                 openStream(path).use { input ->
@@ -232,10 +273,16 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         }
     }
 
-    private suspend fun copyToPipelined(path: String, target: File, fileSize: Long, chunkSize: Int) {
+    private suspend fun copyToPipelined(
+        shareName: String,
+        relativePath: String,
+        target: File,
+        fileSize: Long,
+        chunkSize: Int,
+    ) {
         val coroutine = currentCoroutineContext()
-        withShare { current ->
-            openFile(current.share, path).use { file ->
+        withShare(shareName) { lease ->
+            openFile(lease.share, relativePath).use { file ->
                 target.outputStream().buffered(chunkSize).use { output ->
                     val pending = ArrayDeque<PendingRead>()
                     var nextOffset = 0L
@@ -249,7 +296,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
                             }
                             val request = pending.removeFirst()
                             val response = request.future.get()
-                            check(response.dataLength == request.length) { "SMB 文件读取提前结束：$path" }
+                            check(response.dataLength == request.length) { "SMB 文件读取提前结束：$relativePath" }
                             output.write(response.data, 0, response.dataLength)
                         }
                     } finally {
@@ -271,17 +318,30 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         null,
     )
 
-    private fun openRetainedFile(path: String): OpenedFile = withShare {
-        val file = openFile(it.share, path)
-        OpenedFile(file, it.generation, it.readBufferSize, it.resource)
+    private fun openRetainedFile(path: String): OpenedFile {
+        val (shareName, relativePath) = resolveSmbSharePath(info.share, path)
+        return withShare(shareName) { lease ->
+            OpenedFile(openFile(lease.share, relativePath), lease.generation, lease.readBufferSize)
+        }
     }
 
-    private fun <T> withOpenFile(path: String, block: (OpenedFile) -> T): T = withShare { current ->
-        val opened = OpenedFile(openFile(current.share, path), current.generation, current.readBufferSize, current.resource)
-        opened.file.use { block(opened) }
+    private fun <T> withOpenFile(shareName: String, relativePath: String, block: (OpenedFile) -> T): T =
+        withShare(shareName) { lease ->
+            val opened = OpenedFile(openFile(lease.share, relativePath), lease.generation, lease.readBufferSize)
+            opened.file.use { block(opened) }
+        }
+
+    private fun <T> withShare(shareName: String, block: (ShareLease) -> T): T = withSession { lease ->
+        block(
+            ShareLease(
+                share = connectDiskShare(lease.session, shareName),
+                generation = lease.generation,
+                readBufferSize = lease.readBufferSize,
+            ),
+        )
     }
 
-    private fun <T> withShare(block: (ShareLease) -> T): T = try {
+    private fun <T> withSession(block: (SessionLease) -> T): T = try {
         val started = System.nanoTime()
         useResourceWithRetryOnce(
             resources = resources,
@@ -289,11 +349,10 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         ) { current ->
             logPerformance("resourceAcquire", started, current.generation, null, count = 1)
             block(
-                ShareLease(
-                    share = current.value.share,
+                SessionLease(
+                    session = current.value.session,
                     generation = current.generation,
                     readBufferSize = current.value.readBufferSize,
-                    resource = current.value,
                 ),
             )
         }
@@ -301,27 +360,47 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         throwSmbFailure(e)
     }
 
+    /** 复用会话内缓存的树连接；缓存连接失效时重新树连接，保持与旧连接级复用一致的自愈行为。 */
+    private fun connectDiskShare(session: Session, shareName: String): DiskShare {
+        val share = session.connectShare(shareName) as? DiskShare ?: error("不是磁盘共享：$shareName")
+        if (share.isConnected) return share
+        runCatching { share.close() }
+        return session.connectShare(shareName) as? DiskShare ?: error("不是磁盘共享：$shareName")
+    }
+
+    /** 共享目录未配置时，浏览根目录通过 MS-SRVS 枚举服务器暴露的共享。 */
+    private suspend fun listServerShares(started: Long): List<FileItem> = withContext(Dispatchers.IO) {
+        var count = 0
+        try {
+            SMBClient(config).use { client ->
+                client.connect(info.host, info.port).use { connection ->
+                    val session = connection.authenticate(smbAuthenticationContext(info))
+                    val transport = SMBTransportFactories.SRVSVC.getTransport(session)
+                    val shares = ServerService(transport).getShares1()
+                    smbServerShareItems(shares, key, kind).also { count = it.size }
+                }
+            }
+        } catch (e: Exception) {
+            throwSmbFailure(e)
+        } finally {
+            logPerformance("listShares", started, 0L, null, count = count)
+        }
+    }
+
     private fun connectResources(): SmbResources {
         val started = System.nanoTime()
         val nextClient = SMBClient(config)
         var nextConnection: Connection? = null
         var nextSession: Session? = null
-        var nextShare: DiskShare? = null
         var connected = false
         try {
             nextConnection = nextClient.connect(info.host, info.port)
             nextSession = nextConnection.authenticate(smbAuthenticationContext(info))
-            nextShare = nextSession.connectShare(info.share) as? DiskShare
-                ?: error("不是磁盘共享：${info.share}")
-            return SmbResources(
-                nextClient,
-                nextConnection,
-                nextShare,
-            ).also { connected = true }
+            connected = true
+            return SmbResources(nextClient, nextConnection, nextSession)
         } catch (e: Exception) {
-            runCatching { nextShare?.close() }
             runCatching { nextSession?.close() }
-            runCatching { nextConnection?.close() }
+            runCatching { nextConnection?.close(true) }
             runCatching { nextClient.close() }
             throw e
         } finally {
@@ -398,27 +477,30 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         }
     }
 
+    private data class SessionLease(
+        val session: Session,
+        val generation: Long,
+        val readBufferSize: Int,
+    )
     private data class ShareLease(
         val share: DiskShare,
         val generation: Long,
         val readBufferSize: Int,
-        val resource: SmbResources,
     )
     private data class OpenedFile(
         val file: SmbFile,
         val generation: Long,
         val readBufferSize: Int,
-        val resource: SmbResources,
     )
 
     private data class SmbResources(
         val client: SMBClient,
         val connection: Connection,
-        val share: DiskShare,
+        val session: Session,
     ) {
         val readBufferSize = smbReadBufferSize(connection.negotiatedProtocol.maxReadSize)
 
-        fun isUsable() = share.isConnected && connection.isConnected
+        fun isUsable() = connection.isConnected
 
         fun close() {
             runCatching { connection.close(true) }
@@ -437,3 +519,5 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         val future: java.util.concurrent.Future<com.hierynomus.mssmb2.messages.SMB2ReadResponse>,
     )
 }
+
+private const val SMB_SHARE_TYPE_MASK = 0x3

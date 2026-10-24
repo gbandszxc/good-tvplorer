@@ -114,6 +114,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.9.0")
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")
     implementation("com.hierynomus:smbj:0.14.0")
+    implementation("com.rapid7.client:dcerpc:0.12.13")
     testImplementation(kotlin("test-junit"))
     androidTestImplementation("androidx.room:room-testing:2.8.3")
     androidTestImplementation("androidx.test:core-ktx:1.7.0")

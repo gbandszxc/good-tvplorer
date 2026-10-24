@@ -53,6 +53,7 @@ Application
 - 首次切换到 SQLite 不迁移旧 DataStore；旧文件保留但不再读取，新数据库使用默认设置和空连接列表。
 - 后续新增持久化需求必须先在此目录扩展 Entity、DAO、Repository、测试和本节文档；不得新增 DataStore、SharedPreferences、临时配置文件或绕过 Repository 的直接 SQLite 调用。
 - `smb_connections.password` 保存版本化的 AES-256-GCM 密文信封；密钥由 Android Keystore 按设备生成，随机 IV 与认证标签随密文存储，连接 ID 作为 AAD。
+- `smb_connections.share` 允许为空字符串，表示连接未绑定共享目录：浏览来源根目录时改为枚举服务器暴露的磁盘共享，目标共享由路径首段推导，无需额外持久化状态。
 - `SmbConnectionRepository` 在保存与读取边界完成加解密，`SmbConnectionInfo` 和上层调用方式保持不变。密文格式无效、被篡改或无法认证时直接失败，不回退为明文。
 - 数据库版本 1 升级至版本 2 时，在同一迁移事务中加密旧密码；随后执行一次安全删除、WAL checkpoint 和 `VACUUM`，清理数据库文件中的旧值残留。
 - 数据库域从 Android 云备份和设备间迁移中排除，避免设备绑定密钥缺失时恢复出无法解密的连接数据。
@@ -92,9 +93,11 @@ interface FileSource {
 
 ### 连接复用与生命周期
 
-`SmbFileSource` 内部维护一个 `ReusableResource<SmbResources>` 池，每个 SMB 连接持有 client、connection、share：
+`SmbFileSource` 内部维护一个 `ReusableResource<SmbResources>` 池，每个 SMB 连接持有 client、connection、session：
 
 - **连接复用**：目录与范围读取复用同一连接；图片原图流关闭或取消时强制断开并淘汰其 transport，下一张使用新连接，避免复用被取消读取污染的会话，也避免失效 share 优雅关闭时等待网络超时。
+- **树连接复用**：目录操作按来源路径推导目标共享（连接绑定了共享目录时固定为该共享，否则取路径首段），并通过会话的树连接表复用 `TREE_CONNECT`；发现缓存的树连接失效时重新树连接，保持自愈行为。
+- **共享枚举**：连接未绑定共享目录时，来源根目录通过 MS-SRVS（smbj-rpc 在 IPC$ 上调用 `NetShareEnum`）列出服务器暴露的磁盘共享，非磁盘类型（打印机、串口、IPC$）不展示。
 - **自动重试**：对 `IOException`、`TransportException`、非 API 的 `SMBRuntimeException` 执行一次重连重试。
 
 ### 读取优化
