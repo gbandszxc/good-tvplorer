@@ -7,6 +7,7 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaDataSource
 import android.media.ThumbnailUtils
 import android.os.Build
+import android.util.Base64
 import android.util.Size
 import com.github.gbandszxc.goodtvplorer.data.FileHandle
 import com.github.gbandszxc.goodtvplorer.data.FileItem
@@ -14,6 +15,7 @@ import com.github.gbandszxc.goodtvplorer.data.FileKind
 import com.github.gbandszxc.goodtvplorer.data.FileSource
 import com.github.gbandszxc.goodtvplorer.data.cacheKey
 import com.github.gbandszxc.goodtvplorer.data.commitCacheFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,8 +32,10 @@ class ThumbnailRepository internal constructor(
 ) {
     // ponytail: 浏览百万唯一文件时改用带引用计数的锁池；常规目录规模下永久保留最简单可靠。
     private val imageLocks = ConcurrentHashMap<String, Mutex>()
-    // 目录 → 命中封面文件名；空串表示该目录已确认无封面。仓库实例生命周期内有效。
-    private val siblingCovers = ConcurrentHashMap<String, String>()
+    // 目录 → 封面图片字节（空数组表示已确认无封面）；仓库实例生命周期内有效。
+    private val siblingCovers = ConcurrentHashMap<String, ByteArray>()
+    // 同一目录首次扫描只允许一个请求列目录/读封面，其余等待后直接命中缓存。
+    private val siblingLocks = ConcurrentHashMap<String, Mutex>()
 
     constructor(context: Context) : this(context.cacheDir, ::createThumbnail)
 
@@ -87,42 +91,148 @@ class ThumbnailRepository internal constructor(
     private suspend fun audioCover(source: FileSource, item: FileItem, key: String): File? {
         val target = File(cacheDir, "covers/${hash(key)}.jpg")
         if (target.exists() && target.length() > 0L) return target
-        return runCatching {
-            val picture = siblingCover(source, item) ?: withRetriever(source, item) { it.embeddedPicture }
-            if (picture == null) null else target.also {
-                it.parentFile?.mkdirs()
-                it.writeBytes(picture)
-            }
-        }.getOrNull()
+        val picture = siblingCover(source, item)
+            ?: embeddedCoverFast(source, item)
+            ?: runCatching { withRetriever(source, item) { it.embeddedPicture } }.getOrNull()
+            ?: return null
+        return writeCover(target, picture)
     }
 
-    /** 同目录封面文件优先于内嵌封面；每个目录只列举一次并缓存结论。 */
+    /**
+     * 只读取标签区解析内嵌封面，避免 MediaMetadataRetriever 在 SMB 上随机读取整段数据。
+     * 未覆盖的容器（M4A/Ogg/WAV 等）返回 null，交给 MediaMetadataRetriever 兜底。
+     */
+    private suspend fun embeddedCoverFast(source: FileSource, item: FileItem): ByteArray? = try {
+        val path = item.handle.path
+        val prefix = source.readPrefix(path, TAG_PREFIX_BYTES)
+        when {
+            prefix.isEmpty() -> null
+            AudioBinaryTags.startsWithAscii(prefix, "fLaC") -> flacEmbeddedCover(source, path, prefix)
+            AudioBinaryTags.startsWithAscii(prefix, "ID3") -> id3EmbeddedCover(source, path, prefix)
+            else -> null
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
+
+    private suspend fun flacEmbeddedCover(source: FileSource, path: String, prefix: ByteArray): ByteArray? {
+        val blocks = AudioBinaryTags.flacBlockHeaders(prefix)
+        val pictureBlock = blocks.firstOrNull { it.type == FLAC_PICTURE_BLOCK }
+        if (pictureBlock != null) {
+            val body = readFlacBlock(source, path, prefix, pictureBlock, MAX_EMBEDDED_PICTURE_BYTES) ?: return null
+            return AudioBinaryTags.flacPicture(body)?.data?.takeIf(ByteArray::isNotEmpty)
+        }
+        // 部分编码器把封面 Base64 存进 Vorbis Comment 的 METADATA_BLOCK_PICTURE。
+        val commentBlock = blocks.firstOrNull { it.type == FLAC_VORBIS_COMMENT_BLOCK } ?: return null
+        val body = readFlacBlock(source, path, prefix, commentBlock, MAX_VORBIS_COMMENT_BYTES) ?: return null
+        val encoded = AudioBinaryTags.vorbisComments(body)["METADATA_BLOCK_PICTURE"] ?: return null
+        val decoded = try {
+            Base64.decode(encoded, Base64.DEFAULT)
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        return AudioBinaryTags.flacPicture(decoded)?.data?.takeIf(ByteArray::isNotEmpty)
+    }
+
+    /** 块体已在前缀内直接切片，否则按块头声明的偏移/长度精确读取；读取不完整返回 null。 */
+    private suspend fun readFlacBlock(source: FileSource, path: String, prefix: ByteArray, block: AudioBinaryTags.Block, maxBytes: Int): ByteArray? {
+        val length = block.end - block.start
+        if (length !in 1..maxBytes) return null
+        val body = if (block.end <= prefix.size) {
+            prefix.copyOfRange(block.start, block.end)
+        } else {
+            source.readRange(path, block.start.toLong(), length)
+        }
+        return body.takeIf { it.size >= length }
+    }
+
+    private suspend fun id3EmbeddedCover(source: FileSource, path: String, prefix: ByteArray): ByteArray? {
+        val tagLength = AudioBinaryTags.id3TagLength(prefix) ?: return null
+        if (tagLength > MAX_ID3_TAG_BYTES) return null
+        val tag = if (tagLength <= prefix.size) prefix else source.readRange(path, 0, tagLength)
+        if (tag.size < tagLength) return null
+        return AudioBinaryTags.id3Picture(tag)?.data?.takeIf(ByteArray::isNotEmpty)
+    }
+
+    /** 同目录封面文件优先于内嵌封面；每个目录只列举一次并缓存图片字节。 */
     private suspend fun siblingCover(source: FileSource, item: FileItem): ByteArray? {
         val parentPath = item.handle.path.substringBeforeLast('/', "")
         val directoryKey = "${item.handle.sourceKey}|$parentPath"
-        siblingCovers[directoryKey]?.let { cached ->
-            return cached.takeIf { it.isNotEmpty() }?.let { readSiblingCover(source, parentPath, it) }
-        }
-        // 列举失败不缓存结论，避免一次网络抖动把目录永久判定为无封面。
-        val names = runCatching { source.list(parentPath) }.getOrNull()?.map(FileItem::name) ?: return null
-        var chosen = ""
-        var bytes: ByteArray? = null
-        for (name in siblingCoverCandidates(names)) {
-            val data = readSiblingCover(source, parentPath, name)
-            if (data != null) {
-                chosen = name
-                bytes = data
-                break
+        siblingCovers[directoryKey]?.let { return it.takeIf(ByteArray::isNotEmpty) }
+        return siblingLockFor(directoryKey).withLock {
+            siblingCovers[directoryKey]?.let { return@withLock it.takeIf(ByteArray::isNotEmpty) }
+            // 列举失败不缓存结论，避免一次网络抖动把目录永久判定为无封面。
+            val names = try {
+                source.list(parentPath).map(FileItem::name)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                return@withLock null
             }
+            var bytes: ByteArray? = null
+            for (name in siblingCoverCandidates(names)) {
+                val data = readSiblingCover(source, parentPath, name)
+                if (data != null) {
+                    bytes = data
+                    break
+                }
+            }
+            siblingCovers[directoryKey] = bytes ?: EMPTY_COVER
+            bytes
         }
-        siblingCovers[directoryKey] = chosen
-        return bytes
     }
+
+    private fun siblingLockFor(directoryKey: String): Mutex =
+        siblingLocks[directoryKey] ?: Mutex().let { siblingLocks.putIfAbsent(directoryKey, it) ?: it }
 
     private suspend fun readSiblingCover(source: FileSource, parentPath: String, name: String): ByteArray? {
         val path = if (parentPath.isEmpty()) name else "$parentPath/$name"
         return runCatching { source.readPrefix(path, COVER_PREFIX_BYTES) }.getOrNull()?.takeIf(::isImage)
     }
+
+    /**
+     * 将任意格式的封面压缩为缓存 JPEG：先降采样到 [COVER_MAX_EDGE_PX] 以内，
+     * 优先 ARGB_8888（透明 PNG 不失真），解码失败再用 RGB_565 重试。
+     */
+    private fun writeCover(target: File, picture: ByteArray): File? {
+        if (picture.isEmpty()) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(picture, 0, picture.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > COVER_MAX_EDGE_PX) sample *= 2
+        val bitmap = decodeCover(picture, sample, Bitmap.Config.ARGB_8888)
+            ?: decodeCover(picture, sample, Bitmap.Config.RGB_565)
+            ?: return null
+        target.parentFile?.mkdirs()
+        val partial = File(target.parentFile, ".${target.name}.${UUID.randomUUID()}.part")
+        return try {
+            val compressed = partial.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            when {
+                !compressed -> null
+                target.exists() && target.length() > 0L -> target
+                commitCacheFile(partial, target) -> target
+                else -> null
+            }
+        } finally {
+            partial.delete()
+            bitmap.recycle()
+        }
+    }
+
+    private fun decodeCover(picture: ByteArray, sample: Int, config: Bitmap.Config): Bitmap? = runCatching {
+        BitmapFactory.decodeByteArray(
+            picture,
+            0,
+            picture.size,
+            BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = config
+            },
+        )
+    }.getOrNull()
 
     private fun isImage(bytes: ByteArray): Boolean {
         if (bytes.isEmpty()) return false
@@ -161,7 +271,15 @@ class ThumbnailRepository internal constructor(
     private companion object {
         const val EXIF_PREFIX_BYTES = 256 * 1024
         const val COVER_PREFIX_BYTES = 8 * 1024 * 1024
+        const val TAG_PREFIX_BYTES = 256 * 1024
+        const val MAX_EMBEDDED_PICTURE_BYTES = 16 * 1024 * 1024
+        const val MAX_ID3_TAG_BYTES = 16 * 1024 * 1024
+        const val MAX_VORBIS_COMMENT_BYTES = 4 * 1024 * 1024
+        const val COVER_MAX_EDGE_PX = 1280
+        const val FLAC_PICTURE_BLOCK = 6
+        const val FLAC_VORBIS_COMMENT_BLOCK = 4
         const val VIDEO_FRAME_TIME_US = 3_000_000L
+        val EMPTY_COVER = ByteArray(0)
 
         fun createThumbnail(cachedImage: File, target: File): File? {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
