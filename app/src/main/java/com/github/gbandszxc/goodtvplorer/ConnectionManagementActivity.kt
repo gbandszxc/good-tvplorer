@@ -285,9 +285,11 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
     var domain by remember(existing) { mutableStateOf(existing?.domain.orEmpty()) }
     var anonymous by remember(existing) { mutableStateOf(existing?.isAnonymousCredentials ?: false) }
     val scope = rememberCoroutineScope()
-    // 焦点链节点：0 名称 1 主机 2 端口 3 共享目录 4 匿名访问 5 用户名 6 密码 7 域
+    // 焦点链节点：0 名称 1 主机 2 端口 3 共享目录 4 匿名访问 5 用户名 6 密码 7 域；7 下方固定进入取消，取消右侧为保存
     val fieldRequesters = remember { List(8) { BringIntoViewRequester() } }
     val focusRequesters = remember { List(8) { FocusRequester() } }
+    val cancelActionFocus = remember { FocusRequester() }
+    val saveActionFocus = remember { FocusRequester() }
     val visibleNodes = buildList {
         addAll(0..4)
         if (!anonymous) addAll(5..6)
@@ -297,12 +299,15 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
     fun Modifier.keepVisible(node: Int) = bringIntoViewRequester(fieldRequesters[node]).onFocusChanged {
         if (it.isFocused) scope.launch { fieldRequesters[node].bringIntoView() }
     }
-    fun Modifier.formField(node: Int): Modifier {
+    fun Modifier.formField(node: Int, downOverride: FocusRequester? = null): Modifier {
         val position = visibleNodes.indexOf(node)
         return focusRequester(focusRequesters[node])
             .focusProperties {
                 if (position > 0) up = focusRequesters[visibleNodes[position - 1]]
-                if (position < visibleNodes.lastIndex) down = focusRequesters[visibleNodes[position + 1]]
+                when {
+                    downOverride != null -> down = downOverride
+                    position < visibleNodes.lastIndex -> down = focusRequesters[visibleNodes[position + 1]]
+                }
             }
             .keepVisible(node)
     }
@@ -385,7 +390,7 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
                     domain,
                     { domain = it },
                     "域（可选）",
-                    Modifier.fillMaxWidth().formField(7),
+                    Modifier.fillMaxWidth().formField(7, downOverride = cancelActionFocus),
                     imeAction = ImeAction.Done,
                 )
             }
@@ -393,7 +398,14 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
         confirmButton = {
             TvButton(
                 "保存",
-                modifier = Modifier.width(112.dp),
+                modifier = Modifier
+                    .width(112.dp)
+                    .focusRequester(saveActionFocus)
+                    .focusProperties {
+                        up = focusRequesters[7]
+                        left = cancelActionFocus
+                        right = FocusRequester.Cancel
+                    },
                 enabled = host.isNotBlank(),
                 contentAlignment = Alignment.Center,
             ) {
@@ -414,7 +426,14 @@ private fun SmbConnectionDialog(existing: SmbConnectionInfo?, onDismiss: () -> U
         dismissButton = {
             TvButton(
                 "取消",
-                modifier = Modifier.width(112.dp),
+                modifier = Modifier
+                    .width(112.dp)
+                    .focusRequester(cancelActionFocus)
+                    .focusProperties {
+                        up = focusRequesters[7]
+                        left = FocusRequester.Cancel
+                        right = saveActionFocus
+                    },
                 contentAlignment = Alignment.Center,
                 onClick = onDismiss,
             )
