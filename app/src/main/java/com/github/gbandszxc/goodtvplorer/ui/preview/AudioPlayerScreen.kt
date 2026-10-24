@@ -46,6 +46,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -520,6 +521,14 @@ private fun CoverOverlay(
                 Text("暂无封面", color = colorScheme.onSurfaceVariant, fontSize = 20.sp)
             }
         }
+        // 浅色封面会让底部文字失去对比度，用渐变把标题区压暗。
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(280.dp)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)))),
+        )
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
