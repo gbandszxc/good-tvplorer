@@ -102,7 +102,7 @@ internal fun swipeStep(distance: Float, threshold: Float): Int = when {
 internal fun seekPosition(duration: Long, x: Float, width: Int): Long =
     if (duration <= 0 || width <= 0) 0 else (duration * (x / width).coerceIn(0f, 1f)).roundToLong()
 
-private fun Modifier.horizontalSwipe(onPrevious: () -> Unit, onNext: () -> Unit): Modifier = pointerInput(Unit) {
+internal fun Modifier.horizontalSwipe(onPrevious: () -> Unit, onNext: () -> Unit): Modifier = pointerInput(Unit) {
     var distance = 0f
     val threshold = 72.dp.toPx()
     detectHorizontalDragGestures(
@@ -372,78 +372,6 @@ internal data class NumberedLine(val number: Int, val text: String)
 internal fun textPages(text: String, linesPerPage: Int = 14): List<List<NumberedLine>> =
     text.split('\n').mapIndexed { index, line -> NumberedLine(index + 1, line.trimEnd('\r')) }
         .chunked(linesPerPage).ifEmpty { listOf(listOf(NumberedLine(1, ""))) }
-
-@Composable
-fun AudioPreview(
-    name: String,
-    state: PreviewState,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onBack: () -> Unit,
-) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(horizontal = 36.dp, vertical = 24.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            TvButton("返回", onClick = onBack)
-        }
-        when {
-            state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp) }
-            state.media != null -> AudioPlayer(state.media, state.timedText, onPrevious, onNext, Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun AudioPlayer(
-    media: StreamingMedia,
-    lyrics: List<TimedTextCue>,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val player = remember(media) {
-        ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(FileSourceDataSource.Factory(media)))
-            .build().apply { setMediaItem(MediaItem.fromUri(media.uri)); prepare() }
-    }
-    var playing by remember { mutableStateOf(false) }
-    var position by remember { mutableLongStateOf(0L) }
-    var duration by remember { mutableLongStateOf(0L) }
-    var artwork by remember { mutableStateOf<ByteArray?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val controlFocus = remember { FocusRequester() }
-    DisposableEffect(player) { onDispose { player.release() } }
-    LaunchedEffect(player) {
-        controlFocus.requestFocus()
-        while (true) {
-            position = player.currentPosition.coerceAtLeast(0)
-            duration = player.duration.takeIf { it > 0 } ?: 0L
-            playing = player.isPlaying
-            artwork = player.mediaMetadata.artworkData ?: artwork
-            error = player.playerError?.let(::playbackErrorMessage)
-            delay(250)
-        }
-    }
-    val lyric = lyrics.lastOrNull { position >= it.startMs }?.takeIf { position < it.endMs }
-    Column(modifier.fillMaxWidth()) {
-        Row(
-            Modifier.padding(top = 18.dp).weight(1f).fillMaxWidth().horizontalSwipe(onPrevious, onNext),
-            horizontalArrangement = Arrangement.spacedBy(28.dp),
-        ) {
-            Box(Modifier.weight(0.38f).fillMaxSize().clip(RoundedCornerShape(8.dp)).background(Color(0xFF101A26)), contentAlignment = Alignment.Center) {
-                if (artwork != null) AsyncImage(model = artwork, contentDescription = "音频封面", modifier = Modifier.fillMaxSize().padding(12.dp), contentScale = ContentScale.Fit)
-                else Icon(painterResource(R.drawable.ic_disc), contentDescription = "暂无音频封面", tint = Color(0xFF7CC7D8), modifier = Modifier.requiredSize(72.dp))
-            }
-            Box(Modifier.weight(0.62f).fillMaxSize().background(Color(0xFF101A26)).padding(24.dp), contentAlignment = Alignment.Center) {
-                Text(lyric?.text ?: if (lyrics.isEmpty()) "未找到同名 LRC 歌词" else "♪", color = if (lyric == null) Color(0xFFA8B8C7) else Color(0xFFF3F7FA), fontSize = 28.sp, lineHeight = 40.sp)
-            }
-        }
-        error?.let { Text(it, color = Color(0xFFFFA3A3), fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp)) }
-        MediaControls(player, playing, position, duration, modifier = Modifier.focusRequester(controlFocus))
-    }
-}
 
 @Composable
 private fun SeekProgress(position: Long, duration: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
