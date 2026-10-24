@@ -5,6 +5,7 @@ import com.github.gbandszxc.goodtvplorer.domain.FileTypeDetector
 import com.hierynomus.msdtyp.AccessMask
 import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
+import com.hierynomus.mssmb2.SMB2Dialect
 import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.mssmb2.SMBApiException
 import com.hierynomus.protocol.transport.TransportException
@@ -130,11 +131,18 @@ internal fun smbReadBufferSize(negotiatedMaxReadSize: Int): Int =
     negotiatedMaxReadSize.coerceIn(64 * 1024, 1024 * 1024)
 
 internal fun smbAuthenticationContext(info: SmbConnectionInfo): AuthenticationContext =
-    if (info.username.isBlank() && info.password.isEmpty()) {
+    if (info.isAnonymousCredentials) {
         AuthenticationContext.anonymous()
     } else {
         AuthenticationContext(info.username, info.password.toCharArray(), info.domain.orEmpty())
     }
+
+/**
+ * 匿名会话没有用户会话密钥，而部分服务器在 SMB3 匿名认证响应中不设置
+ * IS_NULL / IS_GUEST 标志，smbj 会对空密钥派生签名密钥导致 NPE；
+ * 匿名连接因此把协商限制在 SMB 2.1 及以下（不派生 SMB3 密钥）。
+ */
+internal fun smbAnonymousDialects(): List<SMB2Dialect> = listOf(SMB2Dialect.SMB_2_0_2, SMB2Dialect.SMB_2_1)
 
 /** 将来源路径拆分为目标共享名与该共享内的相对路径；连接未绑定共享时以路径首段为目标共享。 */
 internal fun resolveSmbSharePath(connectionShare: String, path: String): Pair<String, String> {
@@ -175,6 +183,7 @@ class SmbFileSource(private val info: SmbConnectionInfo) : FileSource, AutoClose
         .withNegotiatedBufferSize()
         .withTimeout(30, TimeUnit.SECONDS)
         .withSoTimeout(15, TimeUnit.SECONDS)
+        .apply { if (info.isAnonymousCredentials) withDialects(*smbAnonymousDialects().toTypedArray()) }
         .build()
     private val resources = ReusableResource(
         factory = ::connectResources,

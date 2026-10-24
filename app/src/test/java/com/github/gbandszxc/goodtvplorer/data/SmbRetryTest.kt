@@ -123,6 +123,16 @@ class SmbRetryTest {
     }
 
     @Test
+    fun `anonymous credentials drive legacy dialect negotiation`() {
+        val anonymous = SmbConnectionInfo("id", "NAS", "nas.local", share = "", username = "", password = "")
+        val credentialed = SmbConnectionInfo("id", "NAS", "nas.local", share = "", username = "zxc", password = "pw")
+
+        assertTrue(anonymous.isAnonymousCredentials)
+        assertTrue(smbAnonymousDialects().none { it.isSmb3x })
+        assertFalse(credentialed.isAnonymousCredentials)
+    }
+
+    @Test
     fun `permanently closed source cannot reconnect`() {
         val source = SmbFileSource(
             SmbConnectionInfo("id", "test", "unreachable.invalid", share = "share", username = "", password = ""),
