@@ -7,11 +7,6 @@ on:
         description: "版本号（如 0.1.2）"
         required: true
         type: string
-      version_code:
-        description: "versionCode（可留空，留空时使用构建脚本默认值）"
-        required: false
-        type: string
-        default: ""
       release_body:
         description: "Release 说明（可留空）"
         required: false
@@ -42,7 +37,7 @@ jobs:
       - name: 配置 Gradle 缓存
         uses: gradle/actions/setup-gradle@v4
 
-      - name: 校验版本号
+      - name: 校验版本号并计算 versionCode
         env:
           VERSION_INPUT: ${{ inputs.version }}
         run: |
@@ -51,8 +46,17 @@ jobs:
             echo "::error::版本号必须为三段数字格式（如 0.1.2），实际输入：$VERSION"
             exit 1
           fi
+          # versionCode = 语义化版本基准 * 1000 + 构建号（run_number 低 3 位）：
+          # 同一版本随构建递增，重打的包可覆盖安装；对外版本名与 Release 标识不受影响
+          VERSION_BASE=$(( BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 1000 + BASH_REMATCH[3] ))
+          VERSION_CODE=$(( VERSION_BASE * 1000 + GITHUB_RUN_NUMBER % 1000 ))
+          if [ "$VERSION_CODE" -gt 2100000000 ]; then
+            echo "::error::版本号过大导致 versionCode 超出 int32 上限，请使用更小的主版本号"
+            exit 1
+          fi
           {
             echo "APP_VERSION_NAME=$VERSION"
+            echo "APP_VERSION_CODE=$VERSION_CODE"
             echo "RELEASE_TAG=$VERSION"
           } >> "$GITHUB_ENV"
 
@@ -76,18 +80,10 @@ jobs:
           } > key.properties
 
       - name: 打包 Release APK
-        env:
-          VERSION_CODE_INPUT: ${{ inputs.version_code }}
-        run: |
-          ARGS="-PappVersionName=$APP_VERSION_NAME"
-          if [ -n "$VERSION_CODE_INPUT" ]; then
-            if ! [[ "$VERSION_CODE_INPUT" =~ ^[0-9]+$ ]] || [ "$VERSION_CODE_INPUT" -gt 2100000000 ]; then
-              echo "::error::versionCode 必须为不超过 2100000000 的整数，实际输入：$VERSION_CODE_INPUT"
-              exit 1
-            fi
-            ARGS="$ARGS -PappVersionCode=$VERSION_CODE_INPUT"
-          fi
-          ./gradlew :app:assembleRelease $ARGS
+        run: >
+          ./gradlew :app:assembleRelease
+          -PappVersionName="$APP_VERSION_NAME"
+          -PappVersionCode="$APP_VERSION_CODE"
 
       - name: 校验产物
         run: |
