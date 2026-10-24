@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,6 +71,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -295,15 +297,15 @@ private fun BrowserToolbar(
     onSearchFocusChange: (Boolean) -> Unit,
 ) {
     var editing by remember(path) { mutableStateOf(false) }
-    var enteredPath by remember(path) { mutableStateOf(path) }
+    val displayPath = if (path.isBlank()) "/" else path
+    var enteredPath by remember(path) { mutableStateOf(TextFieldValue(displayPath)) }
     var restorePathFocus by remember { mutableStateOf(false) }
     val inputFocusRequester = remember { FocusRequester() }
-    val displayPath = if (path.isBlank()) "/" else path
 
     fun submitPath() {
         editing = false
         restorePathFocus = true
-        onOpenPath(enteredPath)
+        onOpenPath(enteredPath.text)
     }
 
     BackHandler(enabled = editing || searchQuery.isNotBlank()) {
@@ -347,8 +349,12 @@ private fun BrowserToolbar(
                     .focusRequester(navigation.path)
                     .onFocusChanged { if (it.isFocused) navigation.focusToolbar(navigation.path) },
                 onClick = {
-                    enteredPath = path
-                    editing = true
+                    if (editing) {
+                        inputFocusRequester.requestFocus() // 已在编辑态：仅把焦点送回输入框，不重置已输入路径
+                    } else {
+                        enteredPath = TextFieldValue(displayPath) // 首次进入编辑：以当前目录路径为初始值
+                        editing = true
+                    }
                 },
             )
             Spacer(Modifier.width(12.dp))
@@ -356,12 +362,26 @@ private fun BrowserToolbar(
                 BasicTextField(
                     value = enteredPath,
                     onValueChange = { enteredPath = it },
-                    modifier = Modifier.weight(1f).focusRequester(inputFocusRequester).onPreviewKeyEvent {
-                        if (it.type == KeyEventType.KeyUp && it.key == Key.Enter) {
-                            submitPath()
-                            true
-                        } else false
-                    },
+                    modifier = Modifier.weight(1f)
+                        .focusProperties {
+                            up = navigation.selectedSource
+                            down = navigation.contentTarget
+                        }
+                        .focusRequester(inputFocusRequester)
+                        .onPreviewKeyEvent {
+                            if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when (it.key) {
+                                Key.DirectionLeft -> if (enteredPath.selection.min <= 0) { navigation.sort.requestFocus(); true } else false
+                                Key.DirectionRight -> if (enteredPath.selection.max >= enteredPath.text.length) { navigation.search.requestFocus(); true } else false
+                                else -> false
+                            }
+                        }
+                        .onPreviewKeyEvent {
+                            if (it.type == KeyEventType.KeyUp && it.key == Key.Enter) {
+                                submitPath()
+                                true
+                            } else false
+                        },
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 20.sp),
                     cursorBrush = SolidColor(Color(0xFFC8D5E2)),
@@ -380,10 +400,18 @@ private fun BrowserToolbar(
 private fun SortMenuButton(sort: BrowserSort, navigation: MainFocusNavigation, onSortChange: (BrowserSort) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     var restoreFocus by remember { mutableStateOf(false) }
+    val selectedOptionFocus = remember { FocusRequester() }
     LaunchedEffect(expanded, restoreFocus) {
         if (!expanded && restoreFocus) {
             navigation.sort.requestFocus()
             restoreFocus = false
+        }
+    }
+    LaunchedEffect(expanded) {
+        if (!expanded) return@LaunchedEffect
+        repeat(5) { // 弹窗内容在独立窗口组合，按帧等待挂载；未挂载时 requestFocus 返回 false
+            withFrameNanos {}
+            if (selectedOptionFocus.requestFocus()) return@LaunchedEffect
         }
     }
     Box {
@@ -425,7 +453,9 @@ private fun SortMenuButton(sort: BrowserSort, navigation: MainFocusNavigation, o
                         expanded = false
                         restoreFocus = true
                     },
-                    modifier = Modifier.semantics { contentDescription = option.label() },
+                    modifier = Modifier
+                        .then(if (option == sort) Modifier.focusRequester(selectedOptionFocus) else Modifier)
+                        .semantics { contentDescription = option.label() },
                 )
             }
         }
@@ -440,6 +470,8 @@ private fun SearchField(
     onFocusChange: (Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    var queryValue by remember { mutableStateOf(TextFieldValue(query)) }
+    LaunchedEffect(query) { if (query != queryValue.text) queryValue = TextFieldValue(query) }
     val border = if (focused) Color(0xFFFFE3A1) else Color.Transparent
     Row(
         Modifier.width(240.dp).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26))
@@ -449,8 +481,8 @@ private fun SearchField(
         Icon(painterResource(R.drawable.ic_search), contentDescription = null, tint = if (focused) Color(0xFFFFC857) else Color(0xFFA8B8C7), modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
+            value = queryValue,
+            onValueChange = { queryValue = it; onQueryChange(it.text) },
             modifier = Modifier.weight(1f)
                 .focusProperties {
                     up = navigation.selectedSource
@@ -467,8 +499,10 @@ private fun SearchField(
                 if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (it.key) {
                     Key.DirectionLeft -> {
-                        navigation.path.requestFocus()
-                        true
+                        if (queryValue.selection.min <= 0) {
+                            navigation.path.requestFocus()
+                            true
+                        } else false
                     }
                     Key.DirectionUp -> {
                         navigation.selectedSource.requestFocus()
