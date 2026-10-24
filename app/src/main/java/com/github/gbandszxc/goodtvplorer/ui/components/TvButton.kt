@@ -52,7 +52,7 @@ fun TvButton(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val isFocused = enabled && focused
+    val isFocused = focused
     val focusedBackground = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     val focusedContent = if (destructive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary
     val idleContent = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
@@ -62,10 +62,10 @@ fun TvButton(
         label = "button-bg",
     )
     val fg by animateColorAsState(
-        if (enabled) {
-            if (isFocused) focusedContent else idleContent
-        } else {
-            idleContent.copy(alpha = 0.45f)
+        when {
+            isFocused -> focusedContent
+            enabled -> idleContent
+            else -> idleContent.copy(alpha = 0.45f)
         },
         animationSpec = tween(160),
         label = "button-fg",
@@ -87,7 +87,8 @@ fun TvButton(
             .background(bg)
             .border(BorderStroke(border, borderColor), RoundedCornerShape(8.dp))
             .onFocusChanged { focused = it.isFocused }
-            .focusable(enabled)
+            // 禁用时保持可聚焦（焦点样式完整可见），确认回调由下方 tvOkClick 按 enabled 决定是否挂载。
+            .focusable()
             .tvOkClick(onClick = onClick, enabled = enabled, role = Role.Button)
             .padding(contentPadding),
         contentAlignment = contentAlignment,
