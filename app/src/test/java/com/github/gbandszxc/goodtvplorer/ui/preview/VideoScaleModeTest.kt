@@ -27,11 +27,4 @@ class VideoScaleModeTest {
         assertEquals(0, swipeStep(72f, 72f))
         assertEquals(1, swipeStep(-73f, 72f))
     }
-
-    @Test
-    fun `触屏拖动进度按可用宽度换算并限制范围`() {
-        assertEquals(30_000L, seekPosition(120_000L, 25f, 100))
-        assertEquals(0L, seekPosition(120_000L, -10f, 100))
-        assertEquals(120_000L, seekPosition(120_000L, 110f, 100))
-    }
 }

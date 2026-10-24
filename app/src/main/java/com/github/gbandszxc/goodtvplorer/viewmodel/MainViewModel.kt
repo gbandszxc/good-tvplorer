@@ -572,6 +572,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         state.previewItems.getOrNull(index + offset)?.let(::selectPreviewItem)
     }
 
+    /** 视频预览失败后重试当前条目：复用预览列表重新走媒体准备流程。 */
+    fun retryPreview() {
+        val state = _state.value
+        val path = (state.screen as? Screen.VideoPreview)?.path ?: return
+        state.previewItems.firstOrNull { it.handle.path == path }?.let(::selectPreviewItem)
+    }
+
     fun toggleAudioPlayPause() {
         audioController?.togglePlayPause()
     }

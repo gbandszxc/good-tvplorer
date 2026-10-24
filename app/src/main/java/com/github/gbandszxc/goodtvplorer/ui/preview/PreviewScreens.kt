@@ -26,11 +26,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.viewinterop.AndroidView
@@ -62,6 +63,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,6 +83,7 @@ import coil3.request.allowHardware
 import com.github.gbandszxc.goodtvplorer.R
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvSeekBar
 import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
 import com.github.gbandszxc.goodtvplorer.domain.FileSourceDataSource
 import com.github.gbandszxc.goodtvplorer.domain.StreamingMedia
@@ -91,16 +94,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.util.concurrent.TimeUnit
-import kotlin.math.roundToLong
 
 internal fun swipeStep(distance: Float, threshold: Float): Int = when {
     distance > threshold -> -1
     distance < -threshold -> 1
     else -> 0
 }
-
-internal fun seekPosition(duration: Long, x: Float, width: Int): Long =
-    if (duration <= 0 || width <= 0) 0 else (duration * (x / width).coerceIn(0f, 1f)).roundToLong()
 
 internal fun Modifier.horizontalSwipe(onPrevious: () -> Unit, onNext: () -> Unit): Modifier = pointerInput(Unit) {
     var distance = 0f
@@ -152,7 +151,8 @@ fun ImageViewer(
     val selectedFilmFocusRequester = remember(selectedPath) { FocusRequester() }
     val filmstripState = rememberLazyListState()
     val selectedFilmIndex = images.indexOfFirst { it.handle.path == selectedPath }
-    LaunchedEffect(Unit) { viewerFocusRequester.requestFocus() }
+    // 关闭控制层后焦点确定回全屏画面；进入时首次组合（controlsVisible=false）同样生效
+    LaunchedEffect(controlsVisible) { if (!controlsVisible) viewerFocusRequester.requestFocus() }
     LaunchedEffect(controlsVisible, selectedFilmIndex) {
         if (controlsVisible && selectedFilmIndex >= 0) filmstripState.scrollToItem(selectedFilmIndex)
     }
@@ -184,21 +184,28 @@ fun ImageViewer(
     Box(
         Modifier.fillMaxSize().background(Color.Black).focusRequester(viewerFocusRequester).focusable()
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                val isOk = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
                 when {
-                    event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter -> {
-                        controlsVisible = true
-                        true
-                    }
-                    !controlsVisible && event.key == Key.DirectionLeft -> {
+                    // 收起时 OK 在 KeyUp 消费并呼出：呼出引发的移焦发生在下一帧重组，本次 KeyUp 不会再落入胶卷项
+                    event.type == KeyEventType.KeyUp && isOk && !controlsVisible -> { controlsVisible = true; true }
+                    // 展开期间吞掉 KeyDown，KeyUp 交给胶卷项（现状行为不变）
+                    event.type == KeyEventType.KeyDown && isOk -> true
+                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionLeft -> {
                         onPrevious()
                         true
                     }
-                    !controlsVisible && event.key == Key.DirectionRight -> {
+                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionRight -> {
                         onNext()
                         true
                     }
-                    controlsVisible && event.key == Key.DirectionDown -> {
+                    // Back 在键序层直接收起控制层：焦点无论在控制层按钮还是画面上都单击确定性关闭，
+                    // 不经 OnBackPressedDispatcher（实测其注册时序竞态会导致首次 Back 仅移焦、二次才收起）；
+                    // 收起后 BackHandler 已禁用，收起的 Back 因 KeyDown 被消费未建立跟踪，不会连带退出预览
+                    event.type == KeyEventType.KeyDown && controlsVisible && event.key == Key.Back -> {
+                        controlsVisible = false
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown && controlsVisible && event.key == Key.DirectionDown -> {
                         selectedFilmFocusRequester.requestFocus()
                         true
                     }
@@ -261,7 +268,18 @@ fun ImageViewer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    TvButton("返回", contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 10.dp), fontSize = 20.sp, onClick = onBack)
+                    // 显式 Cancel 固定原位，不依赖几何搜索结果；进出胶卷仅经上/下键
+                    TvButton(
+                        "返回",
+                        modifier = Modifier.focusProperties {
+                            left = FocusRequester.Cancel
+                            right = FocusRequester.Cancel
+                            up = FocusRequester.Cancel
+                        },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                        fontSize = 20.sp,
+                        onClick = onBack,
+                    )
                 }
                 Spacer(Modifier.weight(1f))
                 LazyRow(
@@ -322,20 +340,34 @@ fun TextPreview(name: String, state: PreviewState, onBack: () -> Unit) {
     var page by remember(state.text) { mutableIntStateOf(0) }
     val pages = remember(state.text) { textPages(state.text) }
     val pageFocus = remember { FocusRequester() }
-    LaunchedEffect(state.loading) { if (!state.loading) pageFocus.requestFocus() }
+    val textBackFocus = remember { FocusRequester() }
+    val prevPageFocus = remember { FocusRequester() }
+    val nextPageFocus = remember { FocusRequester() }
+    // 正文容器自身是否持焦；按钮持焦时翻页键让位给焦点移动
+    var bodyFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(state.loading, state.error) {
+        if (state.loading) return@LaunchedEffect
+        // 错误态正文不组合，显式聚焦返回按钮，避免平台根级救援的弱可发现性
+        if (state.error != null) textBackFocus.requestFocus() else pageFocus.requestFocus()
+    }
     Column(Modifier.fillMaxSize().background(Color(0xFF0B121A)).padding(horizontal = 36.dp, vertical = 24.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("自动换行", color = Color(0xFF7CC7D8), fontSize = 18.sp)
-            TvButton("返回", onClick = onBack)
+            TvButton("返回", modifier = Modifier.focusRequester(textBackFocus), onClick = onBack)
         }
         when {
             state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             state.error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFCA5A5), fontSize = 26.sp) }
             else -> Column(
-                Modifier.padding(top = 18.dp).fillMaxSize().focusRequester(pageFocus).focusable()
+                Modifier.padding(top = 18.dp).fillMaxSize().focusRequester(pageFocus)
+                    .onFocusChanged { bodyFocused = it.isFocused }
+                    .focusProperties { up = textBackFocus; down = prevPageFocus }
+                    .focusable()
                     .onPreviewKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        // 按钮持焦时左右键让位给焦点移动，正文持焦时翻页语义不变
+                        if (!bodyFocused) return@onPreviewKeyEvent false
                         when (event.key) {
                             Key.PageUp, Key.DirectionLeft -> { page = (page - 1).coerceAtLeast(0); true }
                             Key.PageDown, Key.DirectionRight -> { page = (page + 1).coerceAtMost(pages.lastIndex); true }
@@ -358,9 +390,29 @@ fun TextPreview(name: String, state: PreviewState, onBack: () -> Unit) {
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     Text("${page + 1} / ${pages.size}", color = Color(0xFFA8B8C7), fontSize = 18.sp, modifier = Modifier.padding(end = 18.dp))
-                    TvButton("上一页", enabled = page > 0, onClick = { page-- })
+                    TvButton(
+                        "上一页",
+                        enabled = page > 0,
+                        modifier = Modifier.focusRequester(prevPageFocus).focusProperties {
+                            up = textBackFocus
+                            down = FocusRequester.Cancel
+                            left = FocusRequester.Cancel
+                            right = nextPageFocus
+                        },
+                        onClick = { page-- },
+                    )
                     Spacer(Modifier.width(10.dp))
-                    TvButton("下一页", enabled = page < pages.lastIndex, onClick = { page++ })
+                    TvButton(
+                        "下一页",
+                        enabled = page < pages.lastIndex,
+                        modifier = Modifier.focusRequester(nextPageFocus).focusProperties {
+                            up = textBackFocus
+                            down = FocusRequester.Cancel
+                            left = prevPageFocus
+                            right = FocusRequester.Cancel
+                        },
+                        onClick = { page++ },
+                    )
                 }
             }
         }
@@ -374,48 +426,34 @@ internal fun textPages(text: String, linesPerPage: Int = 14): List<List<Numbered
         .chunked(linesPerPage).ifEmpty { listOf(listOf(NumberedLine(1, ""))) }
 
 @Composable
-private fun SeekProgress(position: Long, duration: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
-    var focused by remember { mutableStateOf(false) }
-    Box(
-        modifier.height(48.dp).clip(RoundedCornerShape(8.dp)).background(if (focused) Color(0xFF152232) else Color(0xFF101A26))
-            .border(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color(0xFF26384B), RoundedCornerShape(8.dp))
-            .onFocusChanged { focused = it.isFocused }.focusable().semantics { contentDescription = "播放进度，左右键或触屏拖动调整" }
-            .pointerInput(duration) {
-                detectTapGestures { onSeek(seekPosition(duration, it.x, size.width)) }
-            }
-            .pointerInput(duration) {
-                detectHorizontalDragGestures(
-                    onDragStart = { onSeek(seekPosition(duration, it.x, size.width)) },
-                ) { change, _ ->
-                    change.consume()
-                    onSeek(seekPosition(duration, change.position.x, size.width))
-                }
-            }
-            .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) false else when (event.key) {
-                    Key.DirectionLeft -> { onSeek((position - 10_000).coerceAtLeast(0)); true }
-                    Key.DirectionRight -> { onSeek((position + 10_000).coerceAtMost(duration)); true }
-                    else -> false
-                }
-            }.padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        LinearProgressIndicator(progress = { if (duration <= 0) 0f else position.toFloat() / duration }, modifier = Modifier.fillMaxWidth(), color = Color(0xFFFFC857), trackColor = Color(0xFF26384B))
-    }
-}
-
-@Composable
 fun VideoPreview(
     name: String,
     state: PreviewState,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onBack: () -> Unit,
+    onRetry: () -> Unit,
 ) = when {
     state.loading -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-    state.error != null -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { Text(state.error, color = Color(0xFFFFA3A3), fontSize = 26.sp) }
+    state.error != null -> VideoErrorPanel(message = state.error, onBack = onBack, onRetry = onRetry)
     state.media != null -> VideoPlayer(name, state.media, state.timedText, onPrevious, onNext, onBack)
     else -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { Text("没有可用的视频", color = Color(0xFFA8B8C7), fontSize = 26.sp) }
+}
+
+/** 视频预览失败面板：显式聚焦「重试」，与「返回」并列，确认键语义一目了然。 */
+@Composable
+private fun VideoErrorPanel(message: String, onBack: () -> Unit, onRetry: () -> Unit) {
+    val retryFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { retryFocus.requestFocus() }
+    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Text(message, color = Color(0xFFFFA3A3), fontSize = 26.sp, textAlign = TextAlign.Center)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TvButton("重试", modifier = Modifier.focusRequester(retryFocus), onClick = onRetry)
+                TvButton("返回", onClick = onBack)
+            }
+        }
+    }
 }
 
 @OptIn(UnstableApi::class)
@@ -464,7 +502,15 @@ private fun VideoPlayer(
     var controlsVisible by remember { mutableStateOf(false) }
     var scaleMode by remember { mutableStateOf(VideoScaleMode.Fit) }
     val playerFocus = remember { FocusRequester() }
-    val controlFocus = remember { FocusRequester() }
+    val playFocus = remember { FocusRequester() }
+    val rewind10Focus = remember { FocusRequester() }
+    val forward10Focus = remember { FocusRequester() }
+    val speedFocus = remember { FocusRequester() }
+    val modeFocus = remember { FocusRequester() }
+    val seekFocus = remember { FocusRequester() }
+    val backFocus = remember { FocusRequester() }
+    // 进度条 ↑ 回到的记忆按钮（默认播放/暂停）；各按钮 onFocusChanged 时更新
+    val lastControlsButton = remember { mutableStateOf(playFocus) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onCues(cueGroup: CueGroup) {
@@ -479,7 +525,8 @@ private fun VideoPlayer(
         onDispose { player.removeListener(listener); player.release() }
     }
     LaunchedEffect(player, controlsVisible) {
-        if (controlsVisible) controlFocus.requestFocus() else playerFocus.requestFocus()
+        // 呼出时初始焦点显式落在播放/暂停，不依赖 FocusRequester 对后代 BFS 的隐式取值
+        if (controlsVisible) playFocus.requestFocus() else playerFocus.requestFocus()
         while (true) {
             position = player.currentPosition.coerceAtLeast(0)
             duration = player.duration.takeIf { it > 0 } ?: 0L
@@ -494,12 +541,29 @@ private fun VideoPlayer(
     Box(
         Modifier.fillMaxSize().background(Color.Black).focusRequester(playerFocus).focusable()
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
-                    controlsVisible = true
-                    true
-                } else {
-                    false
+                val isOk = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
+                when {
+                    // 收起时 OK 在 KeyUp 消费并呼出：KeyUp 时本 handler 即焦点属主，呼出引发的移焦发生在下一帧重组，
+                    // 本次 KeyUp 不会再落入任何按钮，从根上排除「呼出附带触发一次播放/暂停」的可能
+                    event.type == KeyEventType.KeyUp && isOk && !controlsVisible -> { controlsVisible = true; true }
+                    // 展开期间吞掉 KeyDown，KeyUp 交给焦点按钮（现状行为不变）
+                    event.type == KeyEventType.KeyDown && isOk -> true
+                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionLeft -> {
+                        onPrevious()
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown && !controlsVisible && event.key == Key.DirectionRight -> {
+                        onNext()
+                        true
+                    }
+                    // Back 在键序层直接收起控制层（与图片页同构）：不依赖 OnBackPressedDispatcher 的注册时序，
+                    // 焦点在控制层任意按钮或画面上都单击确定性关闭；收起后 BackHandler 已禁用且 KeyDown
+                    // 被消费未建立跟踪，本次 Back 不会连带返回文件列表
+                    event.type == KeyEventType.KeyDown && controlsVisible && event.key == Key.Back -> {
+                        controlsVisible = false
+                        true
+                    }
+                    else -> false
                 }
             },
     ) {
@@ -519,7 +583,7 @@ private fun VideoPlayer(
         subtitle?.let {
             Text(
                 it,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 32.dp, vertical = if (controlsVisible) 148.dp else 28.dp)
+                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 32.dp, vertical = if (controlsVisible) 208.dp else 28.dp)
                     .background(Color(0xB3000000), RoundedCornerShape(6.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
                 color = Color.White,
                 fontSize = 24.sp,
@@ -535,7 +599,16 @@ private fun VideoPlayer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(name, modifier = Modifier.weight(1f), color = Color(0xFFF3F7FA), fontSize = 26.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    TvButton("返回", onClick = onBack)
+                    TvButton(
+                        "返回",
+                        modifier = Modifier.focusRequester(backFocus).focusProperties {
+                            down = playFocus
+                            up = FocusRequester.Cancel
+                            left = FocusRequester.Cancel
+                            right = FocusRequester.Cancel
+                        },
+                        onClick = onBack,
+                    )
                 }
                 Spacer(Modifier.weight(1f))
                 MediaControls(
@@ -543,7 +616,7 @@ private fun VideoPlayer(
                     playing = playing,
                     position = position,
                     duration = duration,
-                    modifier = Modifier.fillMaxWidth().background(Color(0xE6101A26)).padding(horizontal = 28.dp, vertical = 18.dp).focusRequester(controlFocus),
+                    modifier = Modifier.fillMaxWidth().background(Color(0xE6101A26)).padding(horizontal = 28.dp, vertical = 18.dp),
                     speed = speed,
                     onSpeed = {
                         speed = when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; else -> 1f }
@@ -551,6 +624,14 @@ private fun VideoPlayer(
                     },
                     scaleMode = effectiveScaleMode,
                     onScaleMode = { scaleMode = scaleMode.next() },
+                    playFocus = playFocus,
+                    rewind10Focus = rewind10Focus,
+                    forward10Focus = forward10Focus,
+                    speedFocus = speedFocus,
+                    modeFocus = modeFocus,
+                    seekFocus = seekFocus,
+                    backFocus = backFocus,
+                    lastControlsButton = lastControlsButton,
                 )
             }
         }
@@ -588,15 +669,113 @@ private fun MediaControls(
     onSpeed: (() -> Unit)? = null,
     scaleMode: VideoScaleMode? = null,
     onScaleMode: (() -> Unit)? = null,
+    playFocus: FocusRequester,
+    rewind10Focus: FocusRequester,
+    forward10Focus: FocusRequester,
+    speedFocus: FocusRequester,
+    modeFocus: FocusRequester,
+    seekFocus: FocusRequester,
+    backFocus: FocusRequester,
+    lastControlsButton: MutableState<FocusRequester>,
 ) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        TvButton(if (playing) "暂停" else "播放", onClick = { if (player.isPlaying) player.pause() else player.play() })
-        TvButton("−10秒", onClick = { player.seekTo((position - 10_000).coerceAtLeast(0)) })
-        SeekProgress(position, duration, { player.seekTo(it) }, Modifier.weight(1f))
-        TvButton("+10秒", onClick = { player.seekTo((position + 10_000).coerceAtMost(duration)) })
-        if (speed != null && onSpeed != null) TvButton("${speed}×", onClick = onSpeed)
-        if (scaleMode != null && onScaleMode != null) TvButton(scaleMode.label, onClick = onScaleMode)
-        Text("${format(position)} / ${format(duration)}", color = Color(0xFFA8B8C7), fontSize = 18.sp)
+    // ±10 秒动作的唯一实现：按钮确认键与进度条左右键共用，保证两条入口步进口径一致
+    val rewind10 = { player.seekTo((position - 10_000).coerceAtLeast(0)) }
+    val forward10 = { player.seekTo((position + 10_000).coerceAtMost(duration)) }
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            TvButton(
+                if (playing) "暂停" else "播放",
+                modifier = Modifier.focusRequester(playFocus).focusProperties {
+                    left = FocusRequester.Cancel
+                    right = rewind10Focus
+                    up = backFocus
+                    down = seekFocus
+                }.onFocusChanged { if (it.isFocused) lastControlsButton.value = playFocus },
+                onClick = { if (player.isPlaying) player.pause() else player.play() },
+            )
+            TvButton(
+                "−10秒",
+                modifier = Modifier.focusRequester(rewind10Focus).focusProperties {
+                    left = playFocus
+                    right = forward10Focus
+                    up = backFocus
+                    down = seekFocus
+                }.onFocusChanged { if (it.isFocused) lastControlsButton.value = rewind10Focus },
+                onClick = rewind10,
+            )
+            TvButton(
+                "+10秒",
+                modifier = Modifier.focusRequester(forward10Focus).focusProperties {
+                    left = rewind10Focus
+                    right = speedFocus
+                    up = backFocus
+                    down = seekFocus
+                }.onFocusChanged { if (it.isFocused) lastControlsButton.value = forward10Focus },
+                onClick = forward10,
+            )
+            if (speed != null && onSpeed != null) {
+                TvButton(
+                    "${speed}×",
+                    modifier = Modifier.focusRequester(speedFocus).focusProperties {
+                        left = forward10Focus
+                        right = modeFocus
+                        up = backFocus
+                        down = seekFocus
+                    }.onFocusChanged { if (it.isFocused) lastControlsButton.value = speedFocus },
+                    onClick = onSpeed,
+                )
+            }
+            if (scaleMode != null && onScaleMode != null) {
+                TvButton(
+                    scaleMode.label,
+                    modifier = Modifier.focusRequester(modeFocus).focusProperties {
+                        left = speedFocus
+                        right = FocusRequester.Cancel
+                        up = backFocus
+                        down = seekFocus
+                    }.onFocusChanged { if (it.isFocused) lastControlsButton.value = modeFocus },
+                    onClick = onScaleMode,
+                )
+            }
+        }
+        // 进度行：左右键在本层 onPreviewKeyEvent（preview 阶段先于 TvSeekBar 内部消费）接管为
+        // 「±10 秒步进 + 焦点移入方向对应的 seek 按钮」。进度条行内无其他可聚焦控件，若由
+        // TvSeekBar 原地消费左右键，焦点将永远无法离开进度条（实测死角：任意次左/右焦点纹丝不动，
+        // 上下行几何也不重叠，系统焦点搜索同样无候选）；步进仍随按键生效，落点按钮即同一动作的
+        // 按钮化身，后续可用确认键继续逐次步进。左右键 KeyUp 会落入新按钮，但 TvButton 仅在
+        // 确认键 KeyUp 触发（TvButton.kt onTvOk / clickable），不会被方向键误触。
+        // ↑ 手动拦截回最近聚焦的按钮（默认播放/暂停），↓ 原地；时长未知时不消费左右键（不移出）。
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            TvSeekBar(
+                positionMs = position,
+                durationMs = duration,
+                onSeek = { player.seekTo(it) },
+                modifier = Modifier.weight(1f).focusRequester(seekFocus)
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) false else when (event.key) {
+                            Key.DirectionUp -> { lastControlsButton.value.requestFocus(); true }
+                            Key.DirectionDown -> true
+                            Key.DirectionLeft -> if (duration > 0) {
+                                rewind10()
+                                rewind10Focus.requestFocus()
+                                true
+                            } else {
+                                false
+                            }
+                            Key.DirectionRight -> if (duration > 0) {
+                                forward10()
+                                forward10Focus.requestFocus()
+                                true
+                            } else {
+                                false
+                            }
+                            else -> false
+                        }
+                    },
+            )
+            Spacer(Modifier.width(16.dp))
+            Text("${format(position)} / ${format(duration)}", color = Color(0xFFA8B8C7), fontSize = 18.sp)
+        }
     }
 }
 

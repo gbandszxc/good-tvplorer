@@ -169,6 +169,7 @@ class MainActivity : ComponentActivity() {
                             onPrevious = { viewModel.movePreviewItem(-1) },
                             onNext = { viewModel.movePreviewItem(1) },
                             onBack = viewModel::goBack,
+                            onRetry = viewModel::retryPreview,
                         )
                     }
                 }
