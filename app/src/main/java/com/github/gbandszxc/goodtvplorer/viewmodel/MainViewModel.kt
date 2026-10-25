@@ -1,7 +1,6 @@
 package com.github.gbandszxc.goodtvplorer.viewmodel
 
 import android.app.Application
-import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.gbandszxc.goodtvplorer.data.FileHandle
@@ -33,8 +32,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
@@ -286,6 +288,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _audioState = MutableStateFlow(AudioPlaybackState())
     val audioState: StateFlow<AudioPlaybackState> = _audioState.asStateFlow()
+
+    /** 一次性 UI 提示（由 Activity 的 TvHintHost 展示），不承担业务状态。 */
+    private val _uiMessages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val uiMessages: SharedFlow<String> = _uiMessages.asSharedFlow()
     private var audioController: AudioPlaybackController? = null
     private var audioStateJob: Job? = null
 
@@ -650,7 +656,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun onAudioSleepTimerExpired() {
         if (_state.value.screen is Screen.AudioPreview) goBack()
-        Toast.makeText(getApplication<Application>(), "定时结束，已停止播放", Toast.LENGTH_SHORT).show()
+        _uiMessages.tryEmit("定时结束，已停止播放")
     }
 
     fun goBack() = navigateBack(_state.value, ::openNetworkHub, ::openLocal, { sourceKey, path ->

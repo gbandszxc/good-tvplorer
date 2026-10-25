@@ -3,23 +3,20 @@ package com.github.gbandszxc.goodtvplorer
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -34,9 +31,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -49,10 +47,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -60,8 +59,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.core.net.toUri
 import androidx.lifecycle.lifecycleScope
 import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
@@ -70,16 +71,33 @@ import com.github.gbandszxc.goodtvplorer.data.nextFontScale
 import com.github.gbandszxc.goodtvplorer.data.persistence.DisplaySettingsRepository
 import com.github.gbandszxc.goodtvplorer.domain.CacheRepository
 import com.github.gbandszxc.goodtvplorer.domain.Formatters
-import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
-import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
+import com.github.gbandszxc.goodtvplorer.ui.components.TvActionButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvHintHost
+import com.github.gbandszxc.goodtvplorer.ui.components.rememberTvHintState
+import com.github.gbandszxc.goodtvplorer.ui.components.tvClickable
 import com.github.gbandszxc.goodtvplorer.ui.components.tvTabClick
+import com.github.gbandszxc.goodtvplorer.ui.theme.LocalTvMotionEnabled
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvColors
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvIcons
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvMotion
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvRadius
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSizes
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSpacing
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvTheme
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvType
 import kotlinx.coroutines.launch
 
-private val SettingsSidebar = Color(0xFF0E1824)
-private val SettingsDivider = Color(0xFF26384B)
-private val SettingsFocusBorder = Color(0xFFFFE3A1)
-private val SettingsMutedText = Color(0xFFA8B8C7)
+/** 侧栏宽度（规格要求 240dp，非通用 token）。 */
+private val SettingsSidebarWidth = 240.dp
+
+/** 侧栏/设置行最小高度（规格要求 84dp）。 */
+private val SettingsRowMinHeight = 84.dp
+
+/** 菜单项高度（规格要求 64dp）。 */
+private val SettingsMenuItemHeight = 64.dp
+
+/** 设置行文字样式：18sp 正文，说明文字使用常规字重。 */
+private val SettingsDescriptionStyle = TvType.label.copy(fontWeight = FontWeight.Normal)
 
 private enum class SettingsSection(val title: String) {
     Display("显示设置"),
@@ -98,7 +116,7 @@ class SettingsActivity : ComponentActivity() {
                 val fontScale by displaySettings.fontScale.collectAsState(initial = 1f)
                 val displayScale = fontScale.coerceIn(0.8f, 1.2f)
                 val baseDensity = LocalDensity.current
-                androidx.compose.runtime.CompositionLocalProvider(
+                CompositionLocalProvider(
                     LocalDensity provides Density(
                         density = baseDensity.density * displayScale,
                         fontScale = effectiveFontScale(displayScale) / displayScale,
@@ -145,114 +163,125 @@ private fun SettingsScreen(
     }
     val context = LocalContext.current
     val githubUrl = "https://github.com/gbandszxc/good-tvplorer"
+    val hint = rememberTvHintState()
 
     LaunchedEffect(Unit) { displayMenuFocus.requestFocus() }
 
-    Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Column(
-            Modifier
-                .width(260.dp)
-                .fillMaxHeight()
-                .background(SettingsSidebar)
-                .padding(horizontal = 28.dp, vertical = 32.dp),
-        ) {
-            Text(
-                text = "设置",
-                color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(24.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SettingsMenuItem(
-                    text = SettingsSection.Display.title,
-                    selected = section == SettingsSection.Display,
-                    focusRequester = displayMenuFocus,
-                    rightFocus = sectionContentFocus,
-                    onClick = { section = SettingsSection.Display },
+    Box(Modifier.fillMaxSize().background(TvColors.Background)) {
+        Row(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .width(SettingsSidebarWidth)
+                    .fillMaxHeight()
+                    .background(TvColors.Panel)
+                    .padding(horizontal = TvSpacing.xl, vertical = TvSpacing.xxxl),
+            ) {
+                Text(
+                    text = "设置",
+                    color = TvColors.TextPrimary,
+                    style = TvType.pageTitle,
                 )
+                Spacer(Modifier.height(TvSpacing.xxl))
+                Column(verticalArrangement = Arrangement.spacedBy(TvSpacing.sm)) {
+                    SettingsMenuItem(
+                        icon = TvIcons.Monitor,
+                        text = SettingsSection.Display.title,
+                        selected = section == SettingsSection.Display,
+                        focusRequester = displayMenuFocus,
+                        rightFocus = sectionContentFocus,
+                        onClick = { section = SettingsSection.Display },
+                    )
+                    SettingsMenuItem(
+                        icon = TvIcons.Database,
+                        text = SettingsSection.Cache.title,
+                        selected = section == SettingsSection.Cache,
+                        focusRequester = cacheMenuFocus,
+                        rightFocus = sectionContentFocus,
+                        onClick = { section = SettingsSection.Cache },
+                    )
+                    SettingsMenuItem(
+                        icon = TvIcons.Info,
+                        text = SettingsSection.About.title,
+                        selected = section == SettingsSection.About,
+                        focusRequester = aboutMenuFocus,
+                        rightFocus = sectionContentFocus,
+                        onClick = { section = SettingsSection.About },
+                    )
+                }
+                Spacer(Modifier.weight(1f))
                 SettingsMenuItem(
-                    text = SettingsSection.Cache.title,
-                    selected = section == SettingsSection.Cache,
-                    focusRequester = cacheMenuFocus,
-                    rightFocus = sectionContentFocus,
-                    onClick = { section = SettingsSection.Cache },
-                )
-                SettingsMenuItem(
-                    text = SettingsSection.About.title,
-                    selected = section == SettingsSection.About,
-                    focusRequester = aboutMenuFocus,
-                    rightFocus = sectionContentFocus,
-                    onClick = { section = SettingsSection.About },
+                    icon = TvIcons.ArrowLeft,
+                    text = "返回",
+                    selected = false,
+                    focusRequester = backMenuFocus,
+                    onClick = onClose,
                 )
             }
-            Spacer(Modifier.weight(1f))
-            SettingsMenuItem(
-                text = "返回",
-                selected = false,
-                focusRequester = backMenuFocus,
-                onClick = onClose,
-            )
-        }
 
-        Box(Modifier.width(1.dp).fillMaxHeight().background(SettingsDivider))
+            Box(Modifier.width(1.dp).fillMaxHeight().background(TvColors.OutlineVariant))
 
-        Column(
-            Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .padding(horizontal = 36.dp, vertical = 32.dp),
-        ) {
-            Text(
-                text = section.title,
-                color = MaterialTheme.colorScheme.secondary,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(24.dp))
-            key(section) {
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    when (section) {
-                        SettingsSection.Display -> DisplaySettingsContent(
-                            fontScale = fontScale,
-                            menuFocus = displayMenuFocus,
-                            decreaseFontFocus = decreaseFontFocus,
-                            increaseFontFocus = increaseFontFocus,
-                            onFontScale = onFontScale,
-                        )
-                        SettingsSection.Cache -> CacheSettingsContent(
-                            cacheSize = cacheSize,
-                            clearCache = clearCache,
-                            menuFocus = cacheMenuFocus,
-                            firstActionFocus = cacheContentFocus,
-                        )
-                        SettingsSection.About -> AboutContent(
-                            version = "v${BuildConfig.VERSION_NAME} / ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}",
-                            menuFocus = aboutMenuFocus,
-                            firstActionFocus = aboutActionFocus,
-                            onCheckUpdate = {
-                                Toast.makeText(context, "检查更新功能开发中", Toast.LENGTH_SHORT).show()
-                            },
-                            onOpenGithub = {
-                                runCatching {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, githubUrl.toUri()))
-                                }
-                            },
-                        )
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(horizontal = 36.dp, vertical = TvSpacing.xxxl),
+            ) {
+                Text(
+                    text = section.title,
+                    color = TvColors.Accent,
+                    style = TvType.pageTitle,
+                )
+                Spacer(Modifier.height(TvSpacing.xxl))
+                key(section) {
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        when (section) {
+                            SettingsSection.Display -> DisplaySettingsContent(
+                                fontScale = fontScale,
+                                menuFocus = displayMenuFocus,
+                                decreaseFontFocus = decreaseFontFocus,
+                                increaseFontFocus = increaseFontFocus,
+                                onFontScale = onFontScale,
+                            )
+                            SettingsSection.Cache -> CacheSettingsContent(
+                                cacheSize = cacheSize,
+                                clearCache = clearCache,
+                                menuFocus = cacheMenuFocus,
+                                firstActionFocus = cacheContentFocus,
+                            )
+                            SettingsSection.About -> AboutContent(
+                                version = "v${BuildConfig.VERSION_NAME} / ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}",
+                                menuFocus = aboutMenuFocus,
+                                firstActionFocus = aboutActionFocus,
+                                onCheckUpdate = { hint.show("检查更新功能开发中") },
+                                onOpenGithub = {
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, githubUrl.toUri()))
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
         }
+        TvHintHost(
+            state = hint,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 24.dp)
+                .zIndex(10f),
+        )
     }
 }
 
 @Composable
 private fun SettingsMenuItem(
+    icon: ImageVector,
     text: String,
     selected: Boolean,
     focusRequester: FocusRequester,
@@ -260,38 +289,45 @@ private fun SettingsMenuItem(
     rightFocus: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
+    val motionEnabled = LocalTvMotionEnabled.current
     var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(TvRadius.md)
     val background by animateColorAsState(
-        if (focused) MaterialTheme.colorScheme.primary else if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
-        animationSpec = tween(160),
+        targetValue = when {
+            focused -> TvColors.Focus
+            selected -> TvColors.Surface
+            else -> Color.Transparent
+        },
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
         label = "$text-background",
     )
-    val textColor by animateColorAsState(
-        if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground,
-        animationSpec = tween(160),
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            focused -> TvColors.OnFocus
+            selected -> TvColors.Accent
+            else -> TvColors.TextPrimary
+        },
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
         label = "$text-color",
     )
     val borderWidth by animateDpAsState(
-        if (focused) 3.dp else 0.dp,
-        animationSpec = tween(160),
+        targetValue = if (focused) 2.dp else 0.dp,
+        animationSpec = if (motionEnabled) TvMotion.color<Dp>() else tween(durationMillis = 0),
         label = "$text-border",
     )
-    val indicator = when {
-        focused && selected -> MaterialTheme.colorScheme.onPrimary
-        selected -> MaterialTheme.colorScheme.secondary
-        else -> Color.Transparent
-    }
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) TvColors.FocusRing else Color.Transparent,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "$text-border-color",
+    )
 
     Row(
         modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .height(SettingsMenuItemHeight)
+            .clip(shape)
             .background(background)
-            .border(
-                BorderStroke(borderWidth, if (focused) SettingsFocusBorder else Color.Transparent),
-                RoundedCornerShape(8.dp),
-            )
+            .border(borderWidth, borderColor, shape)
             .then(if (rightFocus == null) Modifier else Modifier.focusProperties { right = rightFocus })
             .focusRequester(focusRequester)
             .onFocusChanged { focused = it.isFocused }
@@ -303,12 +339,36 @@ private fun SettingsMenuItem(
                     onClick()
                 },
             )
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = TvSpacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(indicator))
-        Spacer(Modifier.width(16.dp))
-        Text(text, color = textColor, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(TvSizes.icon),
+        )
+        // 选中态在图标与文字之间显示小圆点；槽位常驻，文字起始位置不随选中/聚焦变化。
+        Spacer(Modifier.width(TvSpacing.sm))
+        Box(
+            Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        selected && focused -> TvColors.OnFocus
+                        selected -> TvColors.Accent
+                        else -> Color.Transparent
+                    },
+                ),
+        )
+        Spacer(Modifier.width(TvSpacing.sm))
+        Text(
+            text = text,
+            color = contentColor,
+            style = TvType.sectionTitle,
+            maxLines = 1,
+        )
     }
 }
 
@@ -326,34 +386,32 @@ private fun DisplaySettingsContent(
         Column(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 84.dp)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+                .heightIn(min = SettingsRowMinHeight)
+                .padding(horizontal = TvSpacing.xl, vertical = 14.dp),
         ) {
             Text(
                 text = "界面缩放",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
+                color = TvColors.TextPrimary,
+                style = TvType.sectionTitle,
             )
             Text(
                 text = "调整电视端的信息密度；尺寸和文字同步变化，100% 为应用标准大小，更改会立即生效。",
-                color = SettingsMutedText,
-                fontSize = 18.sp,
+                color = TvColors.TextSecondary,
+                style = SettingsDescriptionStyle,
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(TvSpacing.lg))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(TvSpacing.md),
             ) {
-                TvButton(
-                    text = "−",
-                    modifier = Modifier.width(64.dp).focusRequester(decreaseFontFocus)
+                TvActionButton(
+                    icon = TvIcons.Minus,
+                    label = "缩小界面",
+                    onClick = { onFontScale(nextFontScale(fontScale, -0.05f)) },
+                    modifier = Modifier
+                        .focusRequester(decreaseFontFocus)
                         .focusProperties { left = menuFocus },
                     enabled = percentage > 80,
-                    contentPadding = PaddingValues(0.dp),
-                    contentAlignment = Alignment.Center,
-                    contentDescription = "缩小界面",
-                    onClick = { onFontScale(nextFontScale(fontScale, -0.05f)) },
                 )
                 Box(
                     Modifier
@@ -364,25 +422,23 @@ private fun DisplaySettingsContent(
                 ) {
                     Text(
                         text = "$percentage%",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        color = TvColors.TextPrimary,
+                        style = TvType.sectionTitle.copy(fontSize = 28.sp),
+                        maxLines = 1,
                     )
                 }
-                TvButton(
-                    text = "＋",
-                    modifier = Modifier.width(64.dp).focusRequester(increaseFontFocus),
-                    enabled = percentage < 120,
-                    contentPadding = PaddingValues(0.dp),
-                    contentAlignment = Alignment.Center,
-                    contentDescription = "放大界面",
+                TvActionButton(
+                    icon = TvIcons.Plus,
+                    label = "放大界面",
                     onClick = { onFontScale(nextFontScale(fontScale, 0.05f)) },
+                    modifier = Modifier.focusRequester(increaseFontFocus),
+                    enabled = percentage < 120,
                 )
-                TvButton(
-                    text = "恢复默认",
-                    modifier = Modifier.width(128.dp).focusProperties { right = FocusRequester.Cancel },
-                    contentAlignment = Alignment.Center,
+                TvActionButton(
+                    icon = TvIcons.RefreshCw,
+                    label = "恢复默认",
                     onClick = { onFontScale(1f) },
+                    modifier = Modifier.focusProperties { right = FocusRequester.Cancel },
                 )
             }
         }
@@ -403,12 +459,14 @@ private fun CacheSettingsContent(
 
     SettingsGroup {
         SettingsRow(
+            icon = TvIcons.Database,
             title = "当前缓存",
             description = "媒体缩略图与临时文件",
             detail = size?.let(Formatters::size) ?: "正在统计…",
         )
         SettingsGroupDivider()
         SettingsRow(
+            icon = TvIcons.Trash2,
             title = "清理缓存",
             description = "不影响已保存的 SMB 连接和显示设置。",
             detail = "清理",
@@ -435,12 +493,14 @@ private fun AboutContent(
 ) {
     SettingsGroup {
         SettingsRow(
+            icon = TvIcons.Info,
             title = "项目信息",
             description = "本地与 SMB / NAS 媒体文件管理器",
             detail = version,
         )
         SettingsGroupDivider()
         SettingsRow(
+            icon = TvIcons.RefreshCw,
             title = "检查更新",
             description = "功能开发中，暂不检查或下载更新。",
             detail = "功能开发中",
@@ -450,6 +510,7 @@ private fun AboutContent(
         )
         SettingsGroupDivider()
         SettingsRow(
+            icon = TvIcons.Github,
             title = "GitHub",
             description = "github.com/gbandszxc/good-tvplorer",
             detail = "打开",
@@ -464,14 +525,15 @@ private fun SettingsGroup(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val shape = RoundedCornerShape(TvRadius.md)
     Column(
         modifier
             .fillMaxWidth()
             .focusGroup()
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(BorderStroke(1.dp, SettingsDivider), RoundedCornerShape(8.dp))
-            .padding(4.dp),
+            .clip(shape)
+            .background(TvColors.Surface)
+            .border(1.dp, TvColors.OutlineVariant, shape)
+            .padding(TvSpacing.xs),
         content = content,
     )
 }
@@ -481,14 +543,15 @@ private fun SettingsGroupDivider() {
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = TvSpacing.xl)
             .height(1.dp)
-            .background(SettingsDivider),
+            .background(TvColors.OutlineVariant),
     )
 }
 
 @Composable
 private fun SettingsRow(
+    icon: ImageVector,
     title: String,
     description: String,
     modifier: Modifier = Modifier,
@@ -496,78 +559,111 @@ private fun SettingsRow(
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
+    val motionEnabled = LocalTvMotionEnabled.current
     var focused by remember { mutableStateOf(false) }
     val interactive = onClick != null
     val active = interactive && enabled
     val isFocused = interactive && focused
+    val shape = RoundedCornerShape(TvRadius.sm)
+    val disabledAlpha = 0.45f
+
     val background by animateColorAsState(
-        if (isFocused) MaterialTheme.colorScheme.primary else Color.Transparent,
-        animationSpec = tween(160),
+        targetValue = if (isFocused) TvColors.Focus else Color.Transparent,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
         label = "$title-background",
     )
     val titleColor by animateColorAsState(
-        when {
-            isFocused -> MaterialTheme.colorScheme.onPrimary
-            active || !interactive -> MaterialTheme.colorScheme.onSurface
-            else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+        targetValue = when {
+            isFocused -> TvColors.OnFocus
+            interactive && !enabled -> TvColors.TextPrimary.copy(alpha = disabledAlpha)
+            else -> TvColors.TextPrimary
         },
-        animationSpec = tween(160),
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
         label = "$title-color",
     )
     val supportingColor by animateColorAsState(
-        when {
-            isFocused -> MaterialTheme.colorScheme.onPrimary
-            active || !interactive -> SettingsMutedText
-            else -> SettingsMutedText.copy(alpha = 0.45f)
+        targetValue = when {
+            isFocused -> TvColors.OnFocusMuted
+            interactive && !enabled -> TvColors.TextSecondary.copy(alpha = disabledAlpha)
+            else -> TvColors.TextSecondary
         },
-        animationSpec = tween(160),
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
         label = "$title-supporting-color",
     )
+    val iconColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> TvColors.OnFocus
+            interactive && !enabled -> TvColors.TextSecondary.copy(alpha = disabledAlpha)
+            interactive -> TvColors.Accent
+            else -> TvColors.TextSecondary
+        },
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "$title-icon-color",
+    )
     val borderWidth by animateDpAsState(
-        if (isFocused) 3.dp else 0.dp,
-        animationSpec = tween(160),
+        targetValue = if (isFocused) 2.dp else 0.dp,
+        animationSpec = if (motionEnabled) TvMotion.color<Dp>() else tween(durationMillis = 0),
         label = "$title-border",
     )
-    // 操作行禁用时保持可聚焦并完整显示焦点样式，确认是否生效交由 tvOkClick 的 enabled 决定（与 TvButton 同构）。
+    val borderColor by animateColorAsState(
+        targetValue = if (isFocused) TvColors.FocusRing else Color.Transparent,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "$title-border-color",
+    )
+    // 操作行禁用时保持可聚焦并完整显示焦点样式，确认是否生效交由 tvClickable 的 enabled 决定。
     val interactionModifier = when {
         !interactive -> Modifier
         else -> Modifier
             .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .tvOkClick(onClick = onClick, enabled = active, role = Role.Button)
+            .tvClickable(enabled = active, role = Role.Button, onClick = { onClick?.invoke() })
     }
 
-    Column(
+    Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 84.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .heightIn(min = SettingsRowMinHeight)
+            .clip(shape)
             .background(background)
-            .border(
-                BorderStroke(borderWidth, if (isFocused) SettingsFocusBorder else Color.Transparent),
-                RoundedCornerShape(6.dp),
-            )
+            .border(borderWidth, borderColor, shape)
             .then(interactionModifier)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(horizontal = TvSpacing.xl, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f).alignByBaseline(),
-                color = titleColor,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            detail?.let {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconColor,
+            modifier = Modifier.size(TvSizes.icon),
+        )
+        Spacer(Modifier.width(TvSpacing.lg))
+        Column(
+            Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = it,
-                    modifier = Modifier.alignByBaseline(),
-                    color = supportingColor,
-                    fontSize = 18.sp,
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                    color = titleColor,
+                    style = TvType.sectionTitle,
+                    maxLines = 1,
                 )
+                detail?.let {
+                    Spacer(Modifier.width(TvSpacing.md))
+                    Text(
+                        text = it,
+                        color = supportingColor,
+                        style = TvType.label,
+                        maxLines = 1,
+                    )
+                }
             }
+            Text(
+                text = description,
+                color = supportingColor,
+                style = SettingsDescriptionStyle,
+            )
         }
-        Text(text = description, color = supportingColor, fontSize = 18.sp)
     }
 }

@@ -1,5 +1,6 @@
 package com.github.gbandszxc.goodtvplorer
 
+import android.view.KeyEvent
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
@@ -13,10 +14,13 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.github.gbandszxc.goodtvplorer.data.persistence.DisplaySettingsRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -38,6 +42,7 @@ class ConnectionManagementActivityTest {
             .onNode(hasText("SMB") and hasClickAction())
             .assertIsFocused()
         sendKey(Key.DirectionCenter)
+        waitForNameFieldFocus()
 
         val fields = composeRule.onAllNodes(hasSetTextAction()).fetchSemanticsNodes()
         assertEquals(7, fields.size)
@@ -82,17 +87,19 @@ class ConnectionManagementActivityTest {
     fun anonymousToggleHidesCredentialsAndKeepsSaveAvailableWithoutShare() {
         composeRule.onNodeWithText("添加网络地址").performClick()
         composeRule.onNode(hasText("SMB") and hasClickAction()).performClick()
+        waitForNameFieldFocus()
 
-        composeRule.onNodeWithTag("smb-anonymous-toggle").performClick()
+        val toggle = composeRule.onNodeWithTag("smb-anonymous-toggle")
+        toggle.performSemanticsAction(SemanticsActions.RequestFocus)
+        toggle.performClick()
         composeRule.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().let { fields ->
             assertEquals(5, fields.size)
         }
-        sendKey(Key.DirectionDown)
-        composeRule.onNodeWithTag("smb-anonymous-toggle").assertIsFocused()
+        toggle.assertIsFocused()
         sendKey(Key.DirectionDown)
         field(4).assertIsFocused()
 
-        composeRule.onNodeWithTag("smb-anonymous-toggle").performClick()
+        toggle.performClick()
         assertEquals(7, composeRule.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size)
 
         composeRule.onNodeWithTag("smb-anonymous-toggle").performClick()
@@ -104,6 +111,7 @@ class ConnectionManagementActivityTest {
     fun saveButtonStaysDisabledUntilHostIsFilled() {
         composeRule.onNodeWithText("添加网络地址").performClick()
         composeRule.onNode(hasText("SMB") and hasClickAction()).performClick()
+        waitForNameFieldFocus()
 
         saveButton().assertIsNotEnabled()
         field(1).performTextReplacement("nas.local")
@@ -114,6 +122,7 @@ class ConnectionManagementActivityTest {
     fun smbDialogStaysInsideViewportWithActionsVisible() {
         composeRule.onNodeWithText("添加网络地址").performClick()
         composeRule.onNode(hasText("SMB") and hasClickAction()).performClick()
+        waitForNameFieldFocus()
 
         val rootBounds = composeRule.onAllNodes(isRoot())
             .fetchSemanticsNodes()
@@ -136,14 +145,20 @@ class ConnectionManagementActivityTest {
         try {
             runBlocking { displaySettings.setFontScale(0.8f) }
             composeRule.waitUntil(5_000) {
+                val backBounds = composeRule
+                    .onNode(hasText("返回") and hasClickAction())
+                    .fetchSemanticsNode()
+                    .boundsInRoot
                 val titleBounds = composeRule.onNodeWithText("连接管理").fetchSemanticsNode().boundsInRoot
-                kotlin.math.abs(titleBounds.left - 36f * density * 0.8f) < 2f
+                kotlin.math.abs(backBounds.left - 36f * density * 0.8f) < 2f &&
+                    kotlin.math.abs(titleBounds.left - (backBounds.right + 12f * density * 0.8f)) < 2f
             }
             composeRule.onNodeWithText("添加网络地址").performClick()
             composeRule.waitUntil(5_000) {
                 composeRule.onAllNodes(hasText("SMB") and hasClickAction()).fetchSemanticsNodes().size == 1
             }
             composeRule.onNode(hasText("SMB") and hasClickAction()).performClick()
+            waitForNameFieldFocus()
 
             val compactPort = field(2).fetchSemanticsNode().boundsInRoot
             val compactTitle = composeRule.onNodeWithText("新增 SMB").fetchSemanticsNode().boundsInRoot
@@ -175,13 +190,29 @@ class ConnectionManagementActivityTest {
 
     private fun field(index: Int) = composeRule.onAllNodes(hasSetTextAction())[index]
 
+    /** SMB 表单在独立 Dialog 窗口中异步取得初始焦点，等待名称字段真正 Focused 后再断言焦点链。 */
+    private fun waitForNameFieldFocus() {
+        composeRule.waitUntil(5_000) {
+            runCatching {
+                field(0).fetchSemanticsNode().config.getOrNull(SemanticsProperties.Focused) == true
+            }.getOrDefault(false)
+        }
+    }
+
     private fun cancelButton() = composeRule.onNode(hasText("取消") and hasClickAction())
 
     private fun saveButton() = composeRule.onNode(hasText("保存") and hasClickAction())
 
     private fun sendKey(key: Key) {
-        val roots = composeRule.onAllNodes(isRoot())
-        roots[roots.fetchSemanticsNodes().lastIndex].performKeyInput { pressKey(key) }
+        val keyCode = when (key) {
+            Key.DirectionUp -> KeyEvent.KEYCODE_DPAD_UP
+            Key.DirectionDown -> KeyEvent.KEYCODE_DPAD_DOWN
+            Key.DirectionLeft -> KeyEvent.KEYCODE_DPAD_LEFT
+            Key.DirectionRight -> KeyEvent.KEYCODE_DPAD_RIGHT
+            Key.DirectionCenter -> KeyEvent.KEYCODE_DPAD_CENTER
+            else -> error("unsupported key: $key")
+        }
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(keyCode)
         composeRule.waitForIdle()
     }
 }

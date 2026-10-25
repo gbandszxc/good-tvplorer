@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -17,19 +16,28 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import com.github.gbandszxc.goodtvplorer.domain.FileSourceImageFetcher
 import com.github.gbandszxc.goodtvplorer.domain.ImageModelKeyer
 import com.github.gbandszxc.goodtvplorer.data.effectiveFontScale
 import com.github.gbandszxc.goodtvplorer.ui.browser.BrowserScreen
+import com.github.gbandszxc.goodtvplorer.ui.components.TvHintHost
+import com.github.gbandszxc.goodtvplorer.ui.components.rememberTvHintState
 import com.github.gbandszxc.goodtvplorer.ui.main.MainDockLayout
 import com.github.gbandszxc.goodtvplorer.ui.preview.AudioPlayerActions
 import com.github.gbandszxc.goodtvplorer.ui.preview.AudioPreview
@@ -39,11 +47,16 @@ import com.github.gbandszxc.goodtvplorer.ui.preview.VideoPreview
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvTheme
 import com.github.gbandszxc.goodtvplorer.viewmodel.MainViewModel
 import com.github.gbandszxc.goodtvplorer.viewmodel.Screen
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
 
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<MainViewModel>()
     private var lastGrantedMediaPermissions: Set<String>? = null
     private var lastBackPressedAt = 0L
+
+    /** Activity 级一次性提示（退出确认等），由 Compose 中的 TvHintHost 展示。 */
+    private val uiMessages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     private val mediaPermissionsLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         lastGrantedMediaPermissions = grantedMediaPermissions()
         viewModel.onMediaPermissionsChanged()
@@ -95,81 +108,93 @@ class MainActivity : ComponentActivity() {
                     ),
                 ) {
                     BackHandler(onBack = viewModel::goBack)
-                    when (val screen = state.screen) {
-                        is Screen.Browser, Screen.Network -> MainDockLayout(
-                            networkSelected = screen is Screen.Network || (screen is Screen.Browser && screen.sourceKey.startsWith("smb:")),
-                            showNetworkHub = screen is Screen.Network,
-                            connections = state.smbConnections,
-                            onLocal = viewModel::openLocal,
-                            onNetwork = viewModel::openNetwork,
-                            onOpenSmb = viewModel::openSmb,
-                            onNetworkHub = viewModel::openNetworkHub,
-                            onConnections = { startActivity(Intent(this@MainActivity, ConnectionManagementActivity::class.java)) },
-                            onSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
-                            browserViewMode = if (screen is Screen.Browser) state.browserViewMode else null,
-                            onToggleView = viewModel::toggleBrowserViewMode,
-                            onRefresh = viewModel::refresh,
-                            onBack = viewModel::goBack,
-                            onSystemBack = { contentFocused ->
-                                if (screen is Screen.Browser && shouldNavigateUp(screen.path, contentFocused)) {
-                                    viewModel.goBack()
-                                } else {
-                                    confirmExit()
+                    val hint = rememberTvHintState()
+                    LaunchedEffect(Unit) { uiMessages.collect { hint.show(it) } }
+                    LaunchedEffect(Unit) { viewModel.uiMessages.collect { hint.show(it) } }
+                    Box(Modifier.fillMaxSize()) {
+                        when (val screen = state.screen) {
+                            is Screen.Browser, Screen.Network -> MainDockLayout(
+                                networkSelected = screen is Screen.Network || (screen is Screen.Browser && screen.sourceKey.startsWith("smb:")),
+                                showNetworkHub = screen is Screen.Network,
+                                connections = state.smbConnections,
+                                onLocal = viewModel::openLocal,
+                                onNetwork = viewModel::openNetwork,
+                                onOpenSmb = viewModel::openSmb,
+                                onNetworkHub = viewModel::openNetworkHub,
+                                onConnections = { startActivity(Intent(this@MainActivity, ConnectionManagementActivity::class.java)) },
+                                onSettings = { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) },
+                                browserViewMode = if (screen is Screen.Browser) state.browserViewMode else null,
+                                onToggleView = viewModel::toggleBrowserViewMode,
+                                onRefresh = viewModel::refresh,
+                                onBack = viewModel::goBack,
+                                onSystemBack = { contentFocused ->
+                                    if (screen is Screen.Browser && shouldNavigateUp(screen.path, contentFocused)) {
+                                        viewModel.goBack()
+                                    } else {
+                                        confirmExit()
+                                    }
+                                },
+                            ) { focusNavigation ->
+                                if (screen is Screen.Browser) {
+                                    BrowserScreen(
+                                        path = screen.path,
+                                        canNavigateUp = screen.sourceKey != "local" || screen.path.isNotBlank(),
+                                        navigation = focusNavigation,
+                                        state = state.browser,
+                                        thumbnails = state.thumbnails,
+                                        viewMode = state.browserViewMode,
+                                        sort = state.browserSort,
+                                        searchQuery = state.browserSearchQuery,
+                                        searchItems = state.browserSearchItems,
+                                        searchLoading = state.browserSearchLoading,
+                                        previewMetadata = state.browserPreviewMetadata,
+                                        focusAnchorPath = state.focusAnchorPath,
+                                        onOpen = viewModel::openItem,
+                                        onNavigateUp = viewModel::goBack,
+                                        onOpenPath = viewModel::openEnteredPath,
+                                        onSortChange = viewModel::setBrowserSort,
+                                        onSearchQueryChange = viewModel::setBrowserSearchQuery,
+                                        onPreviewMetadataRequest = viewModel::requestBrowserPreviewMetadata,
+                                        onThumbnailVisible = viewModel::requestThumbnail,
+                                        onThumbnailHidden = viewModel::releaseThumbnail,
+                                    )
                                 }
-                            },
-                        ) { focusNavigation ->
-                            if (screen is Screen.Browser) {
-                                BrowserScreen(
-                                    path = screen.path,
-                                    canNavigateUp = screen.sourceKey != "local" || screen.path.isNotBlank(),
-                                    navigation = focusNavigation,
-                                    state = state.browser,
-                                    thumbnails = state.thumbnails,
-                                    viewMode = state.browserViewMode,
-                                    sort = state.browserSort,
-                                    searchQuery = state.browserSearchQuery,
-                                    searchItems = state.browserSearchItems,
-                                    searchLoading = state.browserSearchLoading,
-                                    previewMetadata = state.browserPreviewMetadata,
-                                    focusAnchorPath = state.focusAnchorPath,
-                                    onOpen = viewModel::openItem,
-                                    onNavigateUp = viewModel::goBack,
-                                    onOpenPath = viewModel::openEnteredPath,
-                                    onSortChange = viewModel::setBrowserSort,
-                                    onSearchQueryChange = viewModel::setBrowserSearchQuery,
-                                    onPreviewMetadataRequest = viewModel::requestBrowserPreviewMetadata,
-                                    onThumbnailVisible = viewModel::requestThumbnail,
-                                    onThumbnailHidden = viewModel::releaseThumbnail,
-                                )
                             }
+                            is Screen.ImageViewer -> ImageViewer(
+                                name = screen.name,
+                                selectedPath = screen.path,
+                                state = state.preview,
+                                images = state.previewItems,
+                                thumbnails = state.thumbnails,
+                                onPrevious = { viewModel.movePreviewItem(-1) },
+                                onNext = { viewModel.movePreviewItem(1) },
+                                onSelect = viewModel::selectPreviewItem,
+                                onThumbnailVisible = viewModel::requestThumbnail,
+                                onThumbnailHidden = viewModel::releaseThumbnail,
+                                onBack = viewModel::goBack,
+                            )
+                            is Screen.TextPreview -> TextPreview(screen.name, state.preview, viewModel::goBack)
+                            is Screen.AudioPreview -> AudioPreview(
+                                name = screen.name,
+                                state = state.preview,
+                                audio = audio,
+                                actions = audioActions,
+                            )
+                            is Screen.VideoPreview -> VideoPreview(
+                                name = screen.name,
+                                state = state.preview,
+                                onPrevious = { viewModel.movePreviewItem(-1) },
+                                onNext = { viewModel.movePreviewItem(1) },
+                                onBack = viewModel::goBack,
+                                onRetry = viewModel::retryPreview,
+                            )
                         }
-                        is Screen.ImageViewer -> ImageViewer(
-                            name = screen.name,
-                            selectedPath = screen.path,
-                            state = state.preview,
-                            images = state.previewItems,
-                            thumbnails = state.thumbnails,
-                            onPrevious = { viewModel.movePreviewItem(-1) },
-                            onNext = { viewModel.movePreviewItem(1) },
-                            onSelect = viewModel::selectPreviewItem,
-                            onThumbnailVisible = viewModel::requestThumbnail,
-                            onThumbnailHidden = viewModel::releaseThumbnail,
-                            onBack = viewModel::goBack,
-                        )
-                        is Screen.TextPreview -> TextPreview(screen.name, state.preview, viewModel::goBack)
-                        is Screen.AudioPreview -> AudioPreview(
-                            name = screen.name,
-                            state = state.preview,
-                            audio = audio,
-                            actions = audioActions,
-                        )
-                        is Screen.VideoPreview -> VideoPreview(
-                            name = screen.name,
-                            state = state.preview,
-                            onPrevious = { viewModel.movePreviewItem(-1) },
-                            onNext = { viewModel.movePreviewItem(1) },
-                            onBack = viewModel::goBack,
-                            onRetry = viewModel::retryPreview,
+                        TvHintHost(
+                            state = hint,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 24.dp)
+                                .zIndex(10f),
                         )
                     }
                 }
@@ -200,7 +225,7 @@ class MainActivity : ComponentActivity() {
             finish()
         } else {
             lastBackPressedAt = now
-            Toast.makeText(this, "再按一次返回退出应用", Toast.LENGTH_SHORT).show()
+            uiMessages.tryEmit("再按一次返回退出应用")
         }
     }
 }
