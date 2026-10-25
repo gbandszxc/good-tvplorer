@@ -2,13 +2,12 @@ package com.github.gbandszxc.goodtvplorer.ui.main
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,31 +33,37 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.github.gbandszxc.goodtvplorer.R
+import androidx.compose.ui.zIndex
 import com.github.gbandszxc.goodtvplorer.data.SmbConnectionInfo
 import com.github.gbandszxc.goodtvplorer.data.displayTarget
-import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
-import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
+import com.github.gbandszxc.goodtvplorer.ui.components.TvActionButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvActionTone
+import com.github.gbandszxc.goodtvplorer.ui.components.TvLabelMode
+import com.github.gbandszxc.goodtvplorer.ui.components.TvRailAction
+import com.github.gbandszxc.goodtvplorer.ui.components.tvClickable
+import com.github.gbandszxc.goodtvplorer.ui.theme.LocalTvMotionEnabled
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvColors
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvControlShape
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvIcons
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvMotion
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSizes
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSpacing
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvType
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserViewMode
+
+/** 网络中心连接行高度（规格要求 64dp）。 */
+private val ConnectionRowHeight = 64.dp
 
 private enum class MainFocusRegion { Source, Toolbar, Content }
 
@@ -86,6 +91,13 @@ internal class MainFocusNavigation {
     private var lastMainRegion by mutableStateOf(MainFocusRegion.Content)
     private var lastToolbar by mutableStateOf(path)
     private var lastDock by mutableStateOf(view)
+
+    /**
+     * 浏览页顶栏来源动作的入口。来源按钮位于 [BrowserScreen][com.github.gbandszxc.goodtvplorer.ui.browser.BrowserScreen]
+     * 的顶栏内，但浏览页公开签名保持不变，由 [MainDockLayout] 在这里注入真实回调。
+     */
+    var onSelectLocalSource: () -> Unit = {}
+    var onSelectNetworkSource: () -> Unit = {}
 
     val selectedSource: FocusRequester
         get() = if (networkSelected) networkSource else localSource
@@ -156,14 +168,15 @@ internal fun MainDockLayout(
     content: @Composable (MainFocusNavigation) -> Unit,
 ) {
     val navigation = remember { MainFocusNavigation() }
-    val layoutSpacing = 16.dp
     BackHandler { onSystemBack(navigation.contentFocused) }
     SideEffect {
         navigation.networkSelected = networkSelected
+        navigation.onSelectLocalSource = onLocal
+        navigation.onSelectNetworkSource = onNetwork
         if (showNetworkHub) navigation.contentAvailable = true
     }
     Row(
-        Modifier.fillMaxSize().testTag("main-layout").background(Color(0xFF0B121A)),
+        Modifier.fillMaxSize().testTag("main-layout").background(TvColors.Background),
     ) {
         SideDock(
             onNetworkHub,
@@ -176,12 +189,16 @@ internal fun MainDockLayout(
             navigation,
             showNetworkHub,
         )
-        Spacer(Modifier.width(layoutSpacing))
+        Spacer(Modifier.width(TvSpacing.lg))
         Column(
-            Modifier.weight(1f).fillMaxHeight().padding(top = layoutSpacing, end = layoutSpacing, bottom = layoutSpacing),
-            verticalArrangement = Arrangement.spacedBy(layoutSpacing),
+            Modifier.weight(1f).fillMaxHeight().padding(top = TvSpacing.lg, end = TvSpacing.lg, bottom = TvSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.lg),
         ) {
-            TopDock(networkSelected, showNetworkHub, navigation, onLocal, onNetwork)
+            // 浏览模式下来源与工具栏合并在浏览器自己的 56dp 顶栏里；
+            // 网络中心没有浏览页，仍由这里提供来源切换条。
+            if (showNetworkHub) {
+                TopDock(networkSelected, navigation, onLocal, onNetwork)
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (showNetworkHub) {
                     NetworkHub(connections, navigation, onOpenSmb, onConnections)
@@ -196,99 +213,51 @@ internal fun MainDockLayout(
 @Composable
 private fun TopDock(
     networkSelected: Boolean,
-    showNetworkHub: Boolean,
     navigation: MainFocusNavigation,
     onLocal: () -> Unit,
     onNetwork: () -> Unit,
 ) {
-    val down = if (showNetworkHub) navigation.contentTarget else navigation.path
     Row(
-        Modifier.fillMaxWidth().height(48.dp)
+        Modifier.fillMaxWidth().height(TvSizes.toolbar)
             .testTag("source-bar")
             .focusRestorer(fallback = navigation.selectedSource)
             .focusGroup(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        SourceTab(
+        TvActionButton(
+            icon = TvIcons.HardDrive,
             label = "本机",
-            selected = !networkSelected,
-            requester = navigation.localSource,
-            left = FocusRequester.Cancel,
-            right = navigation.networkSource,
-            down = down,
-            navigation = navigation,
             onClick = onLocal,
+            labelMode = TvLabelMode.Always,
+            selected = !networkSelected,
+            modifier = Modifier
+                .focusProperties {
+                    up = FocusRequester.Cancel
+                    down = navigation.contentTarget
+                    left = FocusRequester.Cancel
+                    right = navigation.networkSource
+                }
+                .focusRequester(navigation.localSource)
+                .onFocusChanged { if (it.isFocused) navigation.focusSource() },
         )
-        Spacer(Modifier.width(12.dp))
-        SourceTab(
+        Spacer(Modifier.width(TvSpacing.sm))
+        TvActionButton(
+            icon = TvIcons.Server,
             label = "网络",
-            selected = networkSelected,
-            requester = navigation.networkSource,
-            left = navigation.localSource,
-            right = FocusRequester.Cancel,
-            down = down,
-            navigation = navigation,
             onClick = onNetwork,
+            labelMode = TvLabelMode.Always,
+            selected = networkSelected,
+            modifier = Modifier
+                .focusProperties {
+                    up = FocusRequester.Cancel
+                    down = navigation.contentTarget
+                    left = navigation.localSource
+                    right = FocusRequester.Cancel
+                }
+                .focusRequester(navigation.networkSource)
+                .onFocusChanged { if (it.isFocused) navigation.focusSource() },
         )
-    }
-}
-
-@Composable
-private fun SourceTab(
-    label: String,
-    selected: Boolean,
-    requester: FocusRequester,
-    left: FocusRequester,
-    right: FocusRequester,
-    down: FocusRequester,
-    navigation: MainFocusNavigation,
-    onClick: () -> Unit,
-) {
-    var focused by remember { mutableStateOf(false) }
-    val background by animateColorAsState(
-        targetValue = when {
-            focused -> Color(0xFFFFC857)
-            selected -> Color(0xFF152232)
-            else -> Color.Transparent
-        },
-        label = "source-tab-background",
-    )
-    val contentColor by animateColorAsState(
-        targetValue = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA),
-        label = "source-tab-content",
-    )
-    val borderColor by animateColorAsState(
-        targetValue = if (focused) Color(0xFFFFE3A1) else Color.Transparent,
-        label = "source-tab-border",
-    )
-    val shape = RoundedCornerShape(16.dp)
-
-    Box(
-        Modifier
-            .height(48.dp)
-            .focusProperties {
-                up = FocusRequester.Cancel
-                this.down = down
-                this.left = left
-                this.right = right
-            }
-            .focusRequester(requester)
-            .shadow(if (selected && !focused) 8.dp else 0.dp, shape)
-            .clip(shape)
-            .background(background)
-            .border(if (focused) 3.dp else 1.dp, borderColor, shape)
-            .onFocusChanged {
-                focused = it.isFocused
-                if (it.isFocused) navigation.focusSource()
-            }
-            .focusable()
-            .tvOkClick(onClick)
-            .semantics { contentDescription = label }
-            .padding(horizontal = 18.dp, vertical = 5.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = contentColor, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -307,102 +276,84 @@ private fun SideDock(
     val browserActionsVisible = browserViewMode != null
     val dockRight = navigation.mainTarget(showNetworkHub)
     Column(
-        Modifier.width(72.dp).fillMaxHeight().testTag("main-dock")
-            .background(Color(0xFF101A26)).padding(vertical = 14.dp)
+        Modifier.width(TvSizes.dock).fillMaxHeight().testTag("main-dock")
+            // 聚焦时右侧浮出的标签药丸要绘制在内容区之上。
+            .zIndex(2f)
+            .background(TvColors.Panel).padding(vertical = TvSpacing.lg)
             .focusRestorer(fallback = navigation.dockTarget(browserActionsVisible))
             .focusGroup(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (browserActionsVisible) {
+            // 聚焦药丸横向浮出 Dock，上部动作必须从顶栏下沿开始，避免遮挡来源按钮。
+            Spacer(Modifier.height(TvSizes.toolbar + TvSpacing.lg))
             val viewLabel = if (browserViewMode == BrowserViewMode.Grid) "切换为列表视图" else "切换为网格视图"
-            val viewIcon = if (browserViewMode == BrowserViewMode.Grid) R.drawable.ic_view_list else R.drawable.ic_view_grid
-            DockIconButton(viewIcon, viewLabel, navigation.view, FocusRequester.Cancel, navigation.refresh, dockRight, navigation, onToggleView)
-            Spacer(Modifier.height(8.dp))
-            DockIconButton(R.drawable.ic_refresh, "刷新", navigation.refresh, navigation.view, navigation.back, dockRight, navigation, onRefresh)
-            Spacer(Modifier.height(8.dp))
-            DockIconButton(R.drawable.ic_back, "返回上级", navigation.back, navigation.refresh, navigation.connections, dockRight, navigation, onBack)
+            val viewIcon = if (browserViewMode == BrowserViewMode.Grid) TvIcons.List else TvIcons.Grid
+            DockAction(viewIcon, viewLabel, navigation.view, FocusRequester.Cancel, navigation.refresh, dockRight, navigation, onToggleView)
+            Spacer(Modifier.height(TvSpacing.sm))
+            DockAction(TvIcons.RefreshCw, "刷新", navigation.refresh, navigation.view, navigation.back, dockRight, navigation, onRefresh)
+            Spacer(Modifier.height(TvSpacing.sm))
+            DockAction(TvIcons.ArrowLeft, "返回上级", navigation.back, navigation.refresh, navigation.connections, dockRight, navigation, onBack)
         }
         Spacer(Modifier.weight(1f))
-        DockIconButton(
-            R.drawable.ic_network_location,
-            "网络位置",
-            navigation.networkHub,
-            if (browserActionsVisible) navigation.back else FocusRequester.Cancel,
-            navigation.connections,
-            dockRight,
-            navigation,
-            onNetworkHub,
-        )
-        Spacer(Modifier.height(8.dp))
-        DockIconButton(
-            R.drawable.ic_connections,
+        // 浏览页的来源入口在顶栏，Dock 不再重复“网络位置”；网络中心仍需要它。
+        if (!browserActionsVisible) {
+            DockAction(
+                TvIcons.Link,
+                "网络位置",
+                navigation.networkHub,
+                FocusRequester.Cancel,
+                navigation.connections,
+                dockRight,
+                navigation,
+                onNetworkHub,
+            )
+            Spacer(Modifier.height(TvSpacing.sm))
+        }
+        DockAction(
+            TvIcons.Server,
             "连接管理",
             navigation.connections,
-            navigation.networkHub,
+            if (browserActionsVisible) navigation.back else navigation.networkHub,
             navigation.settings,
             dockRight,
             navigation,
             onConnections,
         )
-        Spacer(Modifier.height(8.dp))
-        DockIconButton(R.drawable.ic_settings, "设置", navigation.settings, navigation.connections, FocusRequester.Cancel, dockRight, navigation, onSettings)
+        Spacer(Modifier.height(TvSpacing.sm))
+        DockAction(TvIcons.Settings, "设置", navigation.settings, navigation.connections, FocusRequester.Cancel, dockRight, navigation, onSettings)
     }
 }
 
 @Composable
-private fun DockIconButton(
-    icon: Int,
+private fun DockAction(
+    icon: ImageVector,
     label: String,
-    focusRequester: FocusRequester,
+    requester: FocusRequester,
     up: FocusRequester,
     down: FocusRequester,
     right: FocusRequester,
     navigation: MainFocusNavigation,
     onClick: () -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    var confirming by remember { mutableStateOf(false) }
-    val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color.Transparent, label = "dock-background")
-    val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "dock-tint")
-    Box(
-        Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(background)
-            .border(if (focused) 2.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent, RoundedCornerShape(12.dp))
+    TvRailAction(
+        icon = icon,
+        label = label,
+        onClick = {
+            onClick()
+            // 切换视图/刷新会重建内容区，动作后把焦点留在原 Dock 按钮上。
+            requester.requestFocus()
+        },
+        modifier = Modifier
             .focusProperties {
                 this.up = up
                 this.down = down
                 left = FocusRequester.Cancel
                 this.right = right
             }
-            .focusRequester(focusRequester)
-            .onFocusChanged {
-                if (it.isFocused || !confirming) {
-                    focused = it.isFocused
-                    navigation.focusDock(focusRequester, it.isFocused)
-                }
-            }
-            .focusable()
-            .onPreviewKeyEvent { event ->
-                val isOk = event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter
-                when {
-                    event.type == KeyEventType.KeyDown && isOk -> {
-                        confirming = true
-                        true
-                    }
-                    event.type == KeyEventType.KeyUp && isOk -> {
-                        onClick()
-                        focusRequester.requestFocus()
-                        confirming = false
-                        true
-                    }
-                    else -> false
-                }
-            }
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(painterResource(icon), contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
-    }
+            .focusRequester(requester)
+            .onFocusChanged { navigation.focusDock(requester, it.isFocused) },
+    )
 }
 
 @Composable
@@ -417,11 +368,15 @@ private fun NetworkHub(
         ?: connections.firstOrNull()?.id
     if (connections.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Text("尚未配置 SMB / NAS", color = Color(0xFFF3F7FA), fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-                Text("添加连接后即可浏览网络媒体库。", color = Color(0xFFA8B8C7), fontSize = 20.sp)
-                TvButton(
-                    "去配置",
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(TvSpacing.lg)) {
+                Text("尚未配置 SMB / NAS", color = TvColors.TextPrimary, style = TvType.sectionTitle)
+                Text("添加连接后即可浏览网络媒体库。", color = TvColors.TextSecondary, style = TvType.body)
+                TvActionButton(
+                    icon = TvIcons.Plus,
+                    label = "去配置",
+                    onClick = onConnections,
+                    labelMode = TvLabelMode.Always,
+                    tone = TvActionTone.Primary,
                     modifier = Modifier
                         .focusProperties {
                             up = navigation.selectedSource
@@ -431,7 +386,6 @@ private fun NetworkHub(
                         }
                         .focusRequester(navigation.content)
                         .onFocusChanged { if (it.isFocused) navigation.focusContent() },
-                    onClick = onConnections,
                 )
             }
         }
@@ -440,29 +394,98 @@ private fun NetworkHub(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .focusRestorer(fallback = navigation.content)
                 .focusGroup(),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.md),
         ) {
-            Text("网络位置", color = Color(0xFF7CC7D8), fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+            Text("网络位置", color = TvColors.Accent, style = TvType.sectionTitle)
             connections.forEachIndexed { index, connection ->
                 val entryModifier = if (connection.id == entryConnectionId) Modifier.focusRequester(navigation.content) else Modifier
-                TvButton(
-                    "${connection.name}   ${connection.displayTarget()}",
-                    modifier = Modifier.fillMaxWidth()
+                ConnectionRow(
+                    connection = connection,
+                    focusModifier = Modifier.fillMaxWidth()
                         .focusProperties {
                             if (index == 0) up = navigation.selectedSource
                             if (index == connections.lastIndex) down = FocusRequester.Cancel
                             left = navigation.dockTarget(browserActionsVisible = false)
                             right = FocusRequester.Cancel
                         }
-                        .then(entryModifier)
-                        .onFocusChanged {
-                            if (it.isFocused) {
-                                focusedConnectionId = connection.id
-                                navigation.focusContent()
-                            }
-                        },
-                ) { onOpenSmb(connection.id) }
+                        .then(entryModifier),
+                    onFocused = {
+                        focusedConnectionId = connection.id
+                        navigation.focusContent()
+                    },
+                    onClick = { onOpenSmb(connection.id) },
+                )
             }
+        }
+    }
+}
+
+/**
+ * 网络中心连接行：Server 图标 + 名称/目标，整行作为单一焦点目标。
+ * 聚焦时琥珀底 + 2dp FocusRing，与浏览页列表行保持同一视觉语言。
+ */
+@Composable
+private fun ConnectionRow(
+    connection: SmbConnectionInfo,
+    focusModifier: Modifier,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val motionEnabled = LocalTvMotionEnabled.current
+    val name = connection.name
+    val target = connection.displayTarget()
+    val background by animateColorAsState(
+        targetValue = if (focused) TvColors.Focus else TvColors.Surface,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "connection-row-background",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) TvColors.FocusRing else TvColors.OutlineVariant,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "connection-row-border-color",
+    )
+    Row(
+        modifier = focusModifier
+            .height(ConnectionRowHeight)
+            .clip(TvControlShape)
+            .background(background)
+            .border(if (focused) 2.dp else 1.dp, borderColor, TvControlShape)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocused()
+            }
+            .focusable()
+            .tvClickable(onClick = onClick)
+            .semantics { contentDescription = "$name $target" }
+            .padding(horizontal = TvSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(TvSpacing.md),
+    ) {
+        Icon(
+            imageVector = TvIcons.Server,
+            contentDescription = null,
+            tint = if (focused) TvColors.OnFocus else TvColors.Accent,
+            modifier = Modifier.size(TvSizes.iconLarge),
+        )
+        Column(
+            Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.xs),
+        ) {
+            Text(
+                text = name,
+                color = if (focused) TvColors.OnFocus else TvColors.TextPrimary,
+                style = TvType.rowTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = target,
+                color = if (focused) TvColors.OnFocusMuted else TvColors.TextSecondary,
+                style = TvType.meta,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

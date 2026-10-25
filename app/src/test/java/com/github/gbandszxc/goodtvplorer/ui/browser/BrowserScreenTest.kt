@@ -1,22 +1,24 @@
 package com.github.gbandszxc.goodtvplorer.ui.browser
 
-import com.github.gbandszxc.goodtvplorer.R
 import com.github.gbandszxc.goodtvplorer.data.FileKind
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvIcons
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import kotlin.test.assertSame
 
 class BrowserScreenTest {
     @Test
-    fun `each file kind uses its matching vector drawable`() {
+    fun `each file kind uses its matching vector icon`() {
         val expected = mapOf(
-            FileKind.Directory to R.drawable.ic_folder,
-            FileKind.Image to R.drawable.ic_image,
-            FileKind.Text to R.drawable.ic_text,
-            FileKind.Audio to R.drawable.ic_disc,
-            FileKind.Video to R.drawable.ic_video,
-            FileKind.Other to R.drawable.ic_file,
+            FileKind.Directory to TvIcons.Folder,
+            FileKind.Image to TvIcons.Image,
+            FileKind.Text to TvIcons.FileText,
+            FileKind.Audio to TvIcons.Disc,
+            FileKind.Video to TvIcons.Film,
+            FileKind.Other to TvIcons.File,
         )
 
-        assertEquals(expected, FileKind.entries.associateWith(::fileKindIconRes))
+        expected.forEach { (kind, icon) ->
+            assertSame(icon, fileKindIcon(kind), "FileKind.$kind 应使用对应的 TvIcons 图标")
+        }
     }
 }

@@ -3,7 +3,6 @@ package com.github.gbandszxc.goodtvplorer.ui.main
 import android.view.KeyEvent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -13,11 +12,12 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -79,9 +79,10 @@ class MainDockLayoutTest {
 
     @Test
     fun gridFirstRowAlwaysMovesUpToToolbar() {
-        setBrowserContent(BrowserViewMode.Grid, canNavigateUp = false, itemCount = 4)
+        // 列数最少为 3，3 个项目保证同处首行。
+        setBrowserContent(BrowserViewMode.Grid, canNavigateUp = false, itemCount = 3)
 
-        repeat(4) { index ->
+        repeat(3) { index ->
             composeRule.onNode(hasText("folder-$index") and hasClickAction())
                 .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
             pressKey(KeyEvent.KEYCODE_DPAD_UP)
@@ -163,7 +164,7 @@ class MainDockLayoutTest {
     }
 
     @Test
-    fun sourceAndContentAlwaysEnterToolbarThroughPath() {
+    fun sourceMovesDownToContentAndContentEntersToolbarThroughPath() {
         setBrowserContent(BrowserViewMode.List, canNavigateUp = false, searchQuery = "folder")
         composeRule.onNodeWithContentDescription("编辑路径")
             .performSemanticsAction(SemanticsActions.RequestFocus) { it() }
@@ -173,6 +174,8 @@ class MainDockLayoutTest {
         pressKey(KeyEvent.KEYCODE_DPAD_UP)
         composeRule.onNodeWithContentDescription("本机").assertIsFocused()
         pressKey(KeyEvent.KEYCODE_DPAD_DOWN)
+        composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
+        pressKey(KeyEvent.KEYCODE_DPAD_UP)
         composeRule.onNodeWithContentDescription("编辑路径").assertIsFocused()
         pressKey(KeyEvent.KEYCODE_DPAD_RIGHT)
         composeRule.onNodeWithContentDescription("搜索当前目录").assertIsFocused()
@@ -200,8 +203,8 @@ class MainDockLayoutTest {
     }
 
     @Test
-    fun listDisplaysNameSizeAndDateInSeparateColumns() {
-        val name = "这是一个用于验证固定宽度和走马灯效果的超长文件名称.txt"
+    fun listDisplaysNameAndMetadataOnTwoLines() {
+        val name = "这是一个用于验证两行布局和走马灯效果的超长文件名称.txt"
         val modifiedAt = 1_700_000_000_000L
         var displayScale by mutableStateOf(0.8f)
         setBrowserContent(
@@ -223,14 +226,24 @@ class MainDockLayoutTest {
 
         listOf(0.8f, 1f, 1.2f).forEach { scale ->
             composeRule.runOnIdle { displayScale = scale }
-            val nameBounds = composeRule.onAllNodesWithText(name, useUnmergedTree = true)[0].getUnclippedBoundsInRoot()
-            val sizeBounds = composeRule.onNodeWithText("123 B", useUnmergedTree = true).getUnclippedBoundsInRoot()
-            val dateBounds = composeRule.onNodeWithText(Formatters.time(modifiedAt), useUnmergedTree = true).getUnclippedBoundsInRoot()
+            // 快速预览也会展示同样的文件名与元信息，按浏览器列表子树限定节点。
+            val inItemList = hasAnyAncestor(hasTestTag("browser-items"))
+            val rowBounds = composeRule.onNode(hasText(name) and hasClickAction()).getUnclippedBoundsInRoot()
+            val nameBounds = composeRule.onNode(hasText(name) and inItemList, useUnmergedTree = true).getUnclippedBoundsInRoot()
+            val sizeBounds = composeRule.onNode(hasText("123 B") and inItemList, useUnmergedTree = true).getUnclippedBoundsInRoot()
+            val dateBounds = composeRule.onNode(hasText(Formatters.time(modifiedAt)) and inItemList, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val typeBounds = composeRule.onNode(hasText("文本") and inItemList, useUnmergedTree = true).getUnclippedBoundsInRoot()
 
-            assertEquals(360f, (nameBounds.right - nameBounds.left).value, 0.5f)
-            assertEquals(120f, (sizeBounds.right - sizeBounds.left).value, 0.5f)
-            assertTrue(nameBounds.right <= sizeBounds.left)
-            assertTrue(sizeBounds.right <= dateBounds.left)
+            assertTrue("名称应位于元信息行之上", nameBounds.bottom <= sizeBounds.top)
+            assertTrue("名称应位于元信息行之上", nameBounds.bottom <= dateBounds.top)
+            assertTrue("大小应位于日期左侧", sizeBounds.right <= dateBounds.left)
+            listOf(nameBounds, sizeBounds, dateBounds, typeBounds).forEach { node ->
+                assertTrue("节点应位于行范围内", node.left.value >= rowBounds.left.value - 0.5f)
+                assertTrue("节点应位于行范围内", node.right.value <= rowBounds.right.value + 0.5f)
+                assertTrue("节点应位于行范围内", node.top.value >= rowBounds.top.value - 0.5f)
+                assertTrue("节点应位于行范围内", node.bottom.value <= rowBounds.bottom.value + 0.5f)
+            }
         }
     }
 
@@ -297,22 +310,21 @@ class MainDockLayoutTest {
         assertEquals(0f, (dock.left - root.left).value, 0.5f)
         assertEquals(0f, (dock.top - root.top).value, 0.5f)
         assertEquals(0f, (root.bottom - dock.bottom).value, 0.5f)
-        assertEquals(spacing, (source.left - dock.right).value, 0.5f)
-        assertEquals(spacing, (source.top - root.top).value, 0.5f)
-        assertEquals(spacing, (root.right - source.right).value, 0.5f)
-        assertEquals(source.left.value, toolbar.left.value, 0.5f)
-        assertEquals(source.right.value, toolbar.right.value, 0.5f)
-        assertEquals(spacing, (toolbar.top - source.bottom).value, 0.5f)
+        assertEquals(spacing, (toolbar.left - dock.right).value, 0.5f)
+        assertEquals(spacing, (toolbar.top - root.top).value, 0.5f)
+        assertEquals(spacing, (root.right - toolbar.right).value, 0.5f)
+        assertEquals(spacing, (content.top - toolbar.bottom).value, 0.5f)
         assertEquals(toolbar.left.value, content.left.value, 0.5f)
         assertEquals(toolbar.right.value, content.right.value, 0.5f)
-        assertEquals(spacing, (content.top - toolbar.bottom).value, 0.5f)
         assertEquals(spacing, (root.bottom - content.bottom).value, 0.5f)
+        assertEquals(toolbar.left.value, source.left.value, 0.5f)
+        assertTrue(source.top >= toolbar.top && source.bottom <= toolbar.bottom)
     }
 
     @Test
     fun previewPanelFollowsDisplayScale() {
         var displayScale by mutableStateOf(0.8f)
-        setBrowserContent(displayScaleProvider = { displayScale })
+        setBrowserContent(initialViewMode = BrowserViewMode.List, displayScaleProvider = { displayScale })
 
         val compactPanel = composeRule.onNodeWithTag("preview-panel").fetchSemanticsNode().boundsInRoot
 
@@ -323,8 +335,15 @@ class MainDockLayoutTest {
     }
 
     @Test
+    fun gridModeHidesQuickPreview() {
+        setBrowserContent(initialViewMode = BrowserViewMode.Grid, canNavigateUp = false)
+
+        composeRule.onNodeWithTag("preview-panel").assertDoesNotExist()
+    }
+
+    @Test
     fun quickPreviewContentIsScrollableOnShortScreens() {
-        setBrowserContent()
+        setBrowserContent(initialViewMode = BrowserViewMode.List)
 
         composeRule.onNodeWithTag("preview-content")
             .assert(hasScrollAction())
@@ -358,6 +377,7 @@ class MainDockLayoutTest {
             onOpen = { opened++ },
         )
 
+        composeRule.onNode(hasText("folder-0") and hasClickAction()).assertIsFocused()
         pressKey(KeyEvent.KEYCODE_DPAD_CENTER)
 
         composeRule.runOnIdle { assertEquals(1, opened) }
@@ -412,30 +432,29 @@ class MainDockLayoutTest {
                         onRefresh = { contentGeneration++ },
                         onBack = { contentGeneration++ },
                     ) { focusNavigation ->
-                        key(contentGeneration) {
-                            BrowserScreen(
-                                path = "folder",
-                                canNavigateUp = canNavigateUp,
-                                navigation = focusNavigation,
-                                state = BrowserState(items = items),
-                                thumbnails = emptyMap(),
-                                viewMode = viewMode,
-                                sort = BrowserSort(),
-                                searchQuery = searchQuery,
-                                searchItems = null,
-                                searchLoading = false,
-                                previewMetadata = BrowserPreviewMetadataState(),
-                                focusAnchorPath = null,
-                                onOpen = onOpen,
-                                onNavigateUp = {},
-                                onOpenPath = {},
-                                onSortChange = {},
-                                onSearchQueryChange = {},
-                                onPreviewMetadataRequest = {},
-                                onThumbnailVisible = {},
-                                onThumbnailHidden = {},
-                            )
-                        }
+                        // 刷新/返回只更新内容状态，不重建浏览页，避免重置首屏聚焦语义。
+                        BrowserScreen(
+                            path = "folder",
+                            canNavigateUp = canNavigateUp,
+                            navigation = focusNavigation,
+                            state = BrowserState(items = items),
+                            thumbnails = emptyMap(),
+                            viewMode = viewMode,
+                            sort = BrowserSort(),
+                            searchQuery = searchQuery,
+                            searchItems = null,
+                            searchLoading = false,
+                            previewMetadata = BrowserPreviewMetadataState(),
+                            focusAnchorPath = null,
+                            onOpen = onOpen,
+                            onNavigateUp = {},
+                            onOpenPath = {},
+                            onSortChange = {},
+                            onSearchQueryChange = {},
+                            onPreviewMetadataRequest = {},
+                            onThumbnailVisible = {},
+                            onThumbnailHidden = {},
+                        )
                     }
                 }
             }

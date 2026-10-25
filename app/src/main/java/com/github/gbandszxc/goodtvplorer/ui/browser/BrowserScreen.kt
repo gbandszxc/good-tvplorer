@@ -1,17 +1,19 @@
 package com.github.gbandszxc.goodtvplorer.ui.browser
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,16 +32,14 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,36 +57,52 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.github.gbandszxc.goodtvplorer.R
 import com.github.gbandszxc.goodtvplorer.data.FileItem
 import com.github.gbandszxc.goodtvplorer.data.FileKind
 import com.github.gbandszxc.goodtvplorer.domain.Formatters
-import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
-import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
+import com.github.gbandszxc.goodtvplorer.ui.components.TvActionButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvChip
+import com.github.gbandszxc.goodtvplorer.ui.components.TvLabelMode
+import com.github.gbandszxc.goodtvplorer.ui.components.TvMenu
+import com.github.gbandszxc.goodtvplorer.ui.components.TvMenuItem
+import com.github.gbandszxc.goodtvplorer.ui.components.TvMetaRow
+import com.github.gbandszxc.goodtvplorer.ui.components.TvSkeleton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvSpinner
+import com.github.gbandszxc.goodtvplorer.ui.components.tvClickable
 import com.github.gbandszxc.goodtvplorer.ui.main.MainFocusNavigation
-import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserState
+import com.github.gbandszxc.goodtvplorer.ui.theme.LocalTvMotionEnabled
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvColors
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvControlShape
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvIcons
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvMotion
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvPanelShape
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvRadius
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSizes
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSpacing
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvType
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserPreviewMetadataState
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserSort
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserSortField
+import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserState
 import com.github.gbandszxc.goodtvplorer.viewmodel.BrowserViewMode
 import com.github.gbandszxc.goodtvplorer.viewmodel.MainViewModel
 import com.github.gbandszxc.goodtvplorer.viewmodel.SortDirection
@@ -93,6 +110,22 @@ import com.github.gbandszxc.goodtvplorer.viewmodel.filterAndSortBrowserItems
 import java.io.File
 
 private const val NavigateUpFocusKey = "\u0000navigate-up"
+
+/** 搜索框展开宽度：顶栏右侧最大可用宽度。 */
+private val SearchExpandedWidth = 280.dp
+
+/** 网格卡片最小宽度，列数按可用宽度计算。 */
+private val GridCellMinWidth = 168.dp
+
+/** 网格卡片聚焦缩放与时长。 */
+private const val GridFocusScale = 1.03f
+private const val GridFocusScaleMs = 180
+
+/** 状态图标尺寸（规格要求 40dp，非通用 token）。 */
+private val StateIconSize = 40.dp
+
+/** 缩略图占位图标尺寸。 */
+private val ThumbIconSize = 32.dp
 
 @Composable
 internal fun BrowserScreen(
@@ -117,9 +150,9 @@ internal fun BrowserScreen(
     onThumbnailVisible: (FileItem) -> Unit,
     onThumbnailHidden: (FileItem) -> Unit,
 ) {
-    val layoutSpacing = 16.dp
     var searchHasFocus by remember { mutableStateOf(false) }
-    var initialFocusConsumed by remember(path) { mutableStateOf(!navigation.contentInitialFocusAllowed) }
+    // 首屏由内容抢回焦点：默认焦点可能先落在 Dock 上，不能因此抑制内容自动聚焦。
+    var initialFocusConsumed by remember(path) { mutableStateOf(false) }
     val searchableItems = searchItems ?: state.items
     val visibleItems = remember(searchableItems, searchQuery, sort) {
         filterAndSortBrowserItems(searchableItems, searchQuery, sort)
@@ -136,6 +169,7 @@ internal fun BrowserScreen(
     val contentAvailable = !state.loading && state.error == null && defaultContentKey != null
     val shouldAutoFocusContent = contentAvailable && !initialFocusConsumed && !searchHasFocus
     val emptyDirectoryHint = if (canNavigateUp) "选择返回上一级，或刷新当前目录。" else "刷新当前目录以重新检查文件。"
+    val errorMessage = state.error
     SideEffect { navigation.contentAvailable = contentAvailable }
     LaunchedEffect(preview?.handle?.sourceKey, preview?.handle?.path) {
         preview?.let(onPreviewMetadataRequest)
@@ -143,7 +177,7 @@ internal fun BrowserScreen(
 
     Column(
         Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(layoutSpacing),
+        verticalArrangement = Arrangement.spacedBy(TvSpacing.lg),
     ) {
         BrowserToolbar(
             path,
@@ -157,130 +191,58 @@ internal fun BrowserScreen(
         )
         Row(
             Modifier.weight(1f).fillMaxWidth().testTag("browser-content"),
-            horizontalArrangement = Arrangement.spacedBy(layoutSpacing),
+            horizontalArrangement = Arrangement.spacedBy(TvSpacing.lg),
         ) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 when {
                     state.loading -> LoadingPanel()
-                    state.error != null -> MessagePanel("连接或读取失败", state.error, Color(0xFFFFA3A3))
-                    viewMode == BrowserViewMode.List -> {
-                        val totalItems = visibleItems.size + if (canNavigateUp) 1 else 0
-                        LazyColumn(
-                            modifier = Modifier
-                                .testTag("browser-items")
-                                .focusRequester(navigation.content)
-                                .focusRestorer()
-                                .focusGroup(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                        if (canNavigateUp) {
-                            item(key = "navigate-up") {
-                                NavigateUpRow(
-                                    focusModifier = contentFocusModifier(
-                                        up = navigation.path,
-                                        down = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
-                                        left = navigation.dockTarget(browserActionsVisible = true),
-                                        right = FocusRequester.Cancel,
-                                        onFocused = navigation::focusContent,
-                                    ),
-                                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == NavigateUpFocusKey,
-                                    onInitialFocus = { initialFocusConsumed = true },
-                                    onClick = onNavigateUp,
-                                )
-                            }
-                        }
-                        when {
-                            state.items.isEmpty() -> item { InlineMessage("目录为空", emptyDirectoryHint) }
-                            visibleItems.isEmpty() && searchLoading -> item { InlineMessage("正在递归搜索", "正在检索当前目录及其子目录。") }
-                            visibleItems.isEmpty() -> item { InlineMessage("未找到匹配项目", "尝试修改搜索词。") }
-                            else -> itemsIndexed(visibleItems, key = { _, item -> item.handle.sourceKey + item.handle.path }) { index, item ->
-                                val position = index + if (canNavigateUp) 1 else 0
-                                FileRow(
-                                    item,
-                                    thumbnails[MainViewModel.thumbKey(item)],
-                                    onThumbnailVisible,
-                                    onThumbnailHidden,
-                                    focusModifier = contentFocusModifier(
-                                        up = if (position == 0) navigation.path else FocusRequester.Default,
-                                        down = if (position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
-                                        left = navigation.dockTarget(browserActionsVisible = true),
-                                        right = FocusRequester.Cancel,
-                                        onFocused = navigation::focusContent,
-                                    ),
-                                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == item.handle.path,
-                                    onInitialFocus = { initialFocusConsumed = true },
-                                    onFocus = { focusedItem = item },
-                                    onClick = { onOpen(item) },
-                                )
-                            }
-                        }
-                    }
-                    }
-                    else -> {
-                        val totalItems = visibleItems.size + if (canNavigateUp) 1 else 0
-                        val lastRowStart = if (totalItems == 0) 0 else ((totalItems - 1) / 4) * 4
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(4),
-                            modifier = Modifier
-                                .testTag("browser-items")
-                                .focusRequester(navigation.content)
-                                .focusRestorer()
-                                .focusGroup(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                        if (canNavigateUp) {
-                            item(key = "navigate-up") {
-                                NavigateUpTile(
-                                    focusModifier = contentFocusModifier(
-                                        up = navigation.path,
-                                        down = if (lastRowStart == 0) FocusRequester.Cancel else FocusRequester.Default,
-                                        left = navigation.dockTarget(browserActionsVisible = true),
-                                        right = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
-                                        onFocused = navigation::focusContent,
-                                    ),
-                                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == NavigateUpFocusKey,
-                                    onInitialFocus = { initialFocusConsumed = true },
-                                    onClick = onNavigateUp,
-                                )
-                            }
-                        }
-                        when {
-                            state.items.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("目录为空", emptyDirectoryHint) }
-                            visibleItems.isEmpty() && searchLoading -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("正在递归搜索", "正在检索当前目录及其子目录。") }
-                            visibleItems.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) { InlineMessage("未找到匹配项目", "尝试修改搜索词。") }
-                            else -> itemsIndexed(visibleItems, key = { _, item -> item.handle.sourceKey + item.handle.path }) { index, item ->
-                                val position = index + if (canNavigateUp) 1 else 0
-                                FileTile(
-                                    item,
-                                    thumbnails[MainViewModel.thumbKey(item)],
-                                    onThumbnailVisible,
-                                    onThumbnailHidden,
-                                    focusModifier = contentFocusModifier(
-                                        up = if (position < 4) navigation.path else FocusRequester.Default,
-                                        down = if (position >= lastRowStart) FocusRequester.Cancel else FocusRequester.Default,
-                                        left = if (position % 4 == 0) navigation.dockTarget(browserActionsVisible = true) else FocusRequester.Default,
-                                        right = if (position % 4 == 3 || position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
-                                        onFocused = navigation::focusContent,
-                                    ),
-                                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == item.handle.path,
-                                    onInitialFocus = { initialFocusConsumed = true },
-                                    onFocus = { focusedItem = item },
-                                    onClick = { onOpen(item) },
-                                )
-                            }
-                        }
-                    }
-                    }
+                    errorMessage != null -> ErrorPanel(errorMessage)
+                    viewMode == BrowserViewMode.List -> BrowserList(
+                        visibleItems = visibleItems,
+                        directoryEmpty = state.items.isEmpty(),
+                        searchLoading = searchLoading,
+                        canNavigateUp = canNavigateUp,
+                        navigation = navigation,
+                        thumbnails = thumbnails,
+                        shouldAutoFocusContent = shouldAutoFocusContent,
+                        defaultContentKey = defaultContentKey,
+                        emptyDirectoryHint = emptyDirectoryHint,
+                        onInitialFocus = { initialFocusConsumed = true },
+                        onItemFocused = { focusedItem = it },
+                        onOpen = onOpen,
+                        onNavigateUp = onNavigateUp,
+                        onThumbnailVisible = onThumbnailVisible,
+                        onThumbnailHidden = onThumbnailHidden,
+                    )
+                    else -> BrowserGrid(
+                        visibleItems = visibleItems,
+                        directoryEmpty = state.items.isEmpty(),
+                        searchLoading = searchLoading,
+                        canNavigateUp = canNavigateUp,
+                        navigation = navigation,
+                        thumbnails = thumbnails,
+                        shouldAutoFocusContent = shouldAutoFocusContent,
+                        defaultContentKey = defaultContentKey,
+                        emptyDirectoryHint = emptyDirectoryHint,
+                        onInitialFocus = { initialFocusConsumed = true },
+                        onItemFocused = { focusedItem = it },
+                        onOpen = onOpen,
+                        onNavigateUp = onNavigateUp,
+                        onThumbnailVisible = onThumbnailVisible,
+                        onThumbnailHidden = onThumbnailHidden,
+                    )
                 }
             }
-            PreviewPanel(
-                preview,
-                preview?.let { thumbnails[MainViewModel.thumbKey(it)] },
-                previewMetadata,
-                onThumbnailVisible,
-                onThumbnailHidden,
-            )
+            // 网格模式释放整行宽度给卡片，快速预览只在列表模式出现。
+            if (viewMode == BrowserViewMode.List) {
+                PreviewPanel(
+                    preview,
+                    preview?.let { thumbnails[MainViewModel.thumbKey(it)] },
+                    previewMetadata,
+                    onThumbnailVisible,
+                    onThumbnailHidden,
+                )
+            }
         }
     }
 }
@@ -296,11 +258,85 @@ private fun BrowserToolbar(
     onSearchQueryChange: (String) -> Unit,
     onSearchFocusChange: (Boolean) -> Unit,
 ) {
-    var editing by remember(path) { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(TvSizes.toolbar)
+            .testTag("browser-toolbar")
+            .focusGroup(),
+        horizontalArrangement = Arrangement.spacedBy(TvSpacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SourceActions(navigation)
+        SortMenuButton(sort, navigation, onSortChange)
+        PathField(
+            path = path,
+            navigation = navigation,
+            onOpenPath = onOpenPath,
+            modifier = Modifier.weight(1f),
+        )
+        SearchField(searchQuery, navigation, onSearchQueryChange, onSearchFocusChange)
+    }
+}
+
+@Composable
+private fun SourceActions(navigation: MainFocusNavigation) {
+    // 无内容时来源控件的下行回落到路径，避免焦点停在顶栏。
+    val contentDown = if (navigation.contentAvailable) navigation.content else navigation.path
+    Row(
+        Modifier.height(TvSizes.toolbar).testTag("source-bar"),
+        horizontalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TvActionButton(
+            icon = TvIcons.HardDrive,
+            label = "本机",
+            onClick = { navigation.onSelectLocalSource() },
+            labelMode = TvLabelMode.Always,
+            selected = !navigation.networkSelected,
+            modifier = Modifier
+                .focusProperties {
+                    up = FocusRequester.Cancel
+                    down = contentDown
+                    left = FocusRequester.Cancel
+                    right = navigation.networkSource
+                }
+                .focusRequester(navigation.localSource)
+                .onFocusChanged { if (it.isFocused) navigation.focusSource() },
+        )
+        TvActionButton(
+            icon = TvIcons.Server,
+            label = "网络",
+            onClick = { navigation.onSelectNetworkSource() },
+            labelMode = TvLabelMode.Always,
+            selected = navigation.networkSelected,
+            modifier = Modifier
+                .focusProperties {
+                    up = FocusRequester.Cancel
+                    down = contentDown
+                    left = navigation.localSource
+                    right = navigation.sort
+                }
+                .focusRequester(navigation.networkSource)
+                .onFocusChanged { if (it.isFocused) navigation.focusSource() },
+        )
+    }
+}
+
+@Composable
+private fun PathField(
+    path: String,
+    navigation: MainFocusNavigation,
+    onOpenPath: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val displayPath = if (path.isBlank()) "/" else path
+    var editing by remember(path) { mutableStateOf(false) }
     var enteredPath by remember(path) { mutableStateOf(TextFieldValue(displayPath)) }
     var restorePathFocus by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
     val inputFocusRequester = remember { FocusRequester() }
+    val motionEnabled = LocalTvMotionEnabled.current
 
     fun submitPath() {
         editing = false
@@ -308,13 +344,9 @@ private fun BrowserToolbar(
         onOpenPath(enteredPath.text)
     }
 
-    BackHandler(enabled = editing || searchQuery.isNotBlank()) {
-        if (editing) {
-            editing = false
-            restorePathFocus = true
-        } else {
-            onSearchQueryChange("")
-        }
+    BackHandler(enabled = editing) {
+        editing = false
+        restorePathFocus = true
     }
     LaunchedEffect(editing, restorePathFocus) {
         when {
@@ -326,73 +358,246 @@ private fun BrowserToolbar(
         }
     }
 
-    Row(
-        Modifier.fillMaxWidth().height(48.dp)
-            .testTag("browser-toolbar")
-            .focusGroup(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SortMenuButton(sort, navigation, onSortChange)
-        Row(
-            Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26)).padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PathEditButton(
-                modifier = Modifier
-                    .focusProperties {
-                        up = navigation.selectedSource
-                        down = navigation.contentTarget
-                        left = navigation.sort
-                        right = navigation.search
-                    }
-                    .focusRequester(navigation.path)
-                    .onFocusChanged { if (it.isFocused) navigation.focusToolbar(navigation.path) },
+    val borderWidth by animateDpAsState(
+        targetValue = if (focused || editing) 2.dp else 1.dp,
+        animationSpec = if (motionEnabled) TvMotion.color<Dp>() else tween(durationMillis = 0),
+        label = "path-border-width",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (focused || editing) TvColors.FocusRing else TvColors.OutlineVariant,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "path-border-color",
+    )
+
+    Box(
+        modifier = modifier
+            .height(TvSizes.action)
+            .clip(TvControlShape)
+            .background(TvColors.Panel)
+            .border(borderWidth, borderColor, TvControlShape)
+            .focusProperties {
+                up = navigation.selectedSource
+                down = navigation.contentTarget
+                left = navigation.sort
+                right = navigation.search
+            }
+            .focusRequester(navigation.path)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) navigation.focusToolbar(navigation.path)
+            }
+            .focusable()
+            .tvClickable(
                 onClick = {
                     if (editing) {
-                        inputFocusRequester.requestFocus() // 已在编辑态：仅把焦点送回输入框，不重置已输入路径
+                        inputFocusRequester.requestFocus()
                     } else {
-                        enteredPath = TextFieldValue(displayPath) // 首次进入编辑：以当前目录路径为初始值
+                        enteredPath = TextFieldValue(displayPath)
                         editing = true
                     }
                 },
             )
-            Spacer(Modifier.width(12.dp))
+            .semantics { contentDescription = "编辑路径" }
+            .padding(horizontal = TvSpacing.md),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+        ) {
+            Icon(
+                imageVector = TvIcons.Folder,
+                contentDescription = null,
+                tint = if (focused || editing) TvColors.Focus else TvColors.Accent,
+                modifier = Modifier.size(TvSizes.icon),
+            )
             if (editing) {
                 BasicTextField(
                     value = enteredPath,
                     onValueChange = { enteredPath = it },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
                         .focusProperties {
                             up = navigation.selectedSource
                             down = navigation.contentTarget
                         }
                         .focusRequester(inputFocusRequester)
-                        .onPreviewKeyEvent {
-                            if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                            when (it.key) {
-                                Key.DirectionLeft -> if (enteredPath.selection.min <= 0) { navigation.sort.requestFocus(); true } else false
-                                Key.DirectionRight -> if (enteredPath.selection.max >= enteredPath.text.length) { navigation.search.requestFocus(); true } else false
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when (event.key) {
+                                Key.DirectionLeft ->
+                                    if (enteredPath.selection.min <= 0) {
+                                        navigation.sort.requestFocus()
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                Key.DirectionRight ->
+                                    if (enteredPath.selection.max >= enteredPath.text.length) {
+                                        navigation.search.requestFocus()
+                                        true
+                                    } else {
+                                        false
+                                    }
                                 else -> false
                             }
                         }
-                        .onPreviewKeyEvent {
-                            if (it.type == KeyEventType.KeyUp && it.key == Key.Enter) {
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
                                 submitPath()
                                 true
-                            } else false
+                            } else {
+                                false
+                            }
                         },
                     singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 20.sp),
-                    cursorBrush = SolidColor(Color(0xFFC8D5E2)),
+                    textStyle = TvType.label.copy(color = TvColors.TextPrimary),
+                    cursorBrush = SolidColor(TvColors.Accent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { submitPath() }),
                 )
             } else {
-                Text(displayPath, modifier = Modifier.weight(1f), color = Color(0xFF9FB0C2), fontSize = 20.sp, maxLines = 1)
+                Text(
+                    text = displayPath,
+                    modifier = Modifier.weight(1f),
+                    color = TvColors.TextPrimary,
+                    style = TvType.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (focused) {
+                    Icon(
+                        imageVector = TvIcons.Pencil,
+                        contentDescription = null,
+                        tint = TvColors.Focus,
+                        modifier = Modifier.size(TvSizes.icon),
+                    )
+                }
             }
         }
-        SearchField(searchQuery, navigation, onSearchQueryChange, onSearchFocusChange)
+    }
+}
+
+@Composable
+private fun SearchField(
+    query: String,
+    navigation: MainFocusNavigation,
+    onQueryChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val motionEnabled = LocalTvMotionEnabled.current
+    var queryValue by remember { mutableStateOf(TextFieldValue(query)) }
+    LaunchedEffect(query) { if (query != queryValue.text) queryValue = TextFieldValue(query) }
+    val expanded = focused || query.isNotEmpty()
+    val width by animateDpAsState(
+        targetValue = if (expanded) SearchExpandedWidth else TvSizes.action,
+        animationSpec = when {
+            !motionEnabled -> tween(durationMillis = 0)
+            expanded -> TvMotion.expand<Dp>()
+            else -> TvMotion.collapse<Dp>()
+        },
+        label = "search-width",
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (focused) 2.dp else 1.dp,
+        animationSpec = if (motionEnabled) TvMotion.color<Dp>() else tween(durationMillis = 0),
+        label = "search-border-width",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) TvColors.FocusRing else TvColors.OutlineVariant,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "search-border-color",
+    )
+
+    BackHandler(enabled = query.isNotEmpty()) {
+        queryValue = TextFieldValue("")
+        onQueryChange("")
+        navigation.path.requestFocus()
+    }
+
+    Row(
+        Modifier
+            .width(width)
+            .height(TvSizes.action)
+            .clip(TvControlShape)
+            .background(TvColors.Panel)
+            .border(borderWidth, borderColor, TvControlShape)
+            // 触屏点击容器时把焦点交给内部输入框；折叠态下输入框仍有非零宽度。
+            .pointerInput(navigation) {
+                detectTapGestures { navigation.search.requestFocus() }
+            }
+            .padding(horizontal = TvSpacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = TvIcons.Search,
+            contentDescription = null,
+            tint = if (focused) TvColors.Focus else TvColors.TextSecondary,
+            modifier = Modifier.size(TvSizes.icon),
+        )
+        Spacer(Modifier.width(TvSpacing.xs))
+        BasicTextField(
+            value = queryValue,
+            onValueChange = {
+                queryValue = it
+                onQueryChange(it.text)
+            },
+            modifier = Modifier
+                .weight(1f)
+                .focusProperties {
+                    up = navigation.selectedSource
+                    down = navigation.contentTarget
+                    left = navigation.path
+                    right = FocusRequester.Cancel
+                }
+                .focusRequester(navigation.search)
+                .onFocusChanged {
+                    focused = it.isFocused
+                    onFocusChange(it.isFocused)
+                    if (it.isFocused) navigation.focusToolbar(navigation.search)
+                }
+                // 单行输入框会消费方向键，上下行与左边界必须显式转交焦点。
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionLeft ->
+                            if (queryValue.selection.min <= 0) {
+                                navigation.path.requestFocus()
+                                true
+                            } else {
+                                false
+                            }
+                        Key.DirectionUp -> {
+                            navigation.selectedSource.requestFocus()
+                            true
+                        }
+                        Key.DirectionDown -> {
+                            if (navigation.contentAvailable) navigation.content.requestFocus()
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                .semantics { contentDescription = "搜索当前目录" },
+            singleLine = true,
+            textStyle = TvType.label.copy(color = TvColors.TextPrimary),
+            cursorBrush = SolidColor(TvColors.Accent),
+            decorationBox = { innerTextField ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (query.isBlank() && expanded) {
+                        Text(
+                            text = "搜索当前目录",
+                            color = TvColors.TextMuted,
+                            style = TvType.label,
+                            maxLines = 1,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
     }
 }
 
@@ -414,48 +619,127 @@ private fun SortMenuButton(sort: BrowserSort, navigation: MainFocusNavigation, o
             if (selectedOptionFocus.requestFocus()) return@LaunchedEffect
         }
     }
-    Box {
-        ToolbarIconButton(
-            R.drawable.ic_sort,
-            "排序",
-            modifier = Modifier
-                .focusProperties {
-                    up = navigation.selectedSource
-                    down = navigation.contentTarget
-                    left = navigation.dockTarget(browserActionsVisible = true)
-                    right = navigation.path
-                }
-                .focusRequester(navigation.sort)
-                .onFocusChanged { if (it.isFocused) navigation.focusToolbar(navigation.sort) },
-            onClick = { expanded = true },
-        )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = {
-                expanded = false
-                restoreFocus = true
-            },
-            modifier = Modifier.background(Color(0xFF152232)),
-        ) {
-            sortOptions.forEach { option ->
-                val selected = option == sort
-                DropdownMenuItem(
-                    text = {
-                        Row(Modifier.width(196.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(painterResource(option.iconRes()), contentDescription = null, tint = if (selected) Color(0xFFFFC857) else Color(0xFFA8B8C7), modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Text(option.fieldLabel(), modifier = Modifier.weight(1f), color = if (selected) Color(0xFFFFC857) else Color(0xFFF3F7FA), fontSize = 18.sp)
-                            Text(option.directionArrow(), color = if (selected) Color(0xFFFFC857) else Color(0xFFA8B8C7), fontSize = 22.sp)
-                        }
-                    },
-                    onClick = {
-                        onSortChange(option)
-                        expanded = false
-                        restoreFocus = true
-                    },
-                    modifier = Modifier
-                        .then(if (option == sort) Modifier.focusRequester(selectedOptionFocus) else Modifier)
-                        .semantics { contentDescription = option.label() },
+    TvActionButton(
+        icon = TvIcons.ArrowUpDown,
+        label = "排序：${sort.fieldLabel()} ${sort.directionArrow()}",
+        onClick = { expanded = true },
+        labelMode = TvLabelMode.OnFocus,
+        contentDescription = "排序",
+        modifier = Modifier
+            .focusProperties {
+                up = navigation.selectedSource
+                down = navigation.contentTarget
+                left = navigation.selectedSource
+                right = navigation.path
+            }
+            .focusRequester(navigation.sort)
+            .onFocusChanged { if (it.isFocused) navigation.focusToolbar(navigation.sort) },
+    )
+    TvMenu(
+        expanded = expanded,
+        onDismissRequest = {
+            expanded = false
+            restoreFocus = true
+        },
+    ) {
+        sortOptions.forEach { option ->
+            TvMenuItem(
+                icon = option.fieldIcon(),
+                label = option.fieldLabel(),
+                selected = option == sort,
+                trailing = option.directionArrow(),
+                onClick = {
+                    onSortChange(option)
+                    expanded = false
+                    restoreFocus = true
+                },
+                focusRequester = selectedOptionFocus.takeIf { option == sort },
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrowserList(
+    visibleItems: List<FileItem>,
+    directoryEmpty: Boolean,
+    searchLoading: Boolean,
+    canNavigateUp: Boolean,
+    navigation: MainFocusNavigation,
+    thumbnails: Map<String, File>,
+    shouldAutoFocusContent: Boolean,
+    defaultContentKey: String?,
+    emptyDirectoryHint: String,
+    onInitialFocus: () -> Unit,
+    onItemFocused: (FileItem) -> Unit,
+    onOpen: (FileItem) -> Unit,
+    onNavigateUp: () -> Unit,
+    onThumbnailVisible: (FileItem) -> Unit,
+    onThumbnailHidden: (FileItem) -> Unit,
+) {
+    val totalItems = visibleItems.size + if (canNavigateUp) 1 else 0
+    LazyColumn(
+        modifier = Modifier
+            .testTag("browser-items")
+            .focusRequester(navigation.content)
+            .focusRestorer()
+            .focusGroup(),
+        verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+    ) {
+        if (canNavigateUp) {
+            item(key = "navigate-up") {
+                NavigateUpRow(
+                    focusModifier = contentFocusModifier(
+                        up = navigation.path,
+                        down = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
+                        left = navigation.dockTarget(browserActionsVisible = true),
+                        right = FocusRequester.Cancel,
+                        onFocused = navigation::focusContent,
+                    ),
+                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == NavigateUpFocusKey,
+                    onInitialFocus = onInitialFocus,
+                    onClick = onNavigateUp,
+                )
+            }
+        }
+        when {
+            directoryEmpty -> item {
+                EmptyState(
+                    icon = TvIcons.Folder,
+                    title = "目录为空",
+                    body = emptyDirectoryHint,
+                    modifier = Modifier.fillParentMaxWidth().fillParentMaxHeight(0.75f),
+                )
+            }
+            visibleItems.isEmpty() && searchLoading -> item {
+                SearchingState(Modifier.fillParentMaxWidth().fillParentMaxHeight(0.75f))
+            }
+            visibleItems.isEmpty() -> item {
+                EmptyState(
+                    icon = TvIcons.Search,
+                    title = "未找到匹配项目",
+                    body = "尝试修改搜索词。",
+                    modifier = Modifier.fillParentMaxWidth().fillParentMaxHeight(0.75f),
+                )
+            }
+            else -> itemsIndexed(visibleItems, key = { _, item -> item.handle.sourceKey + item.handle.path }) { index, item ->
+                val position = index + if (canNavigateUp) 1 else 0
+                FileRow(
+                    item,
+                    thumbnails[MainViewModel.thumbKey(item)],
+                    onThumbnailVisible,
+                    onThumbnailHidden,
+                    focusModifier = contentFocusModifier(
+                        up = if (position == 0) navigation.path else FocusRequester.Default,
+                        down = if (position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
+                        left = navigation.dockTarget(browserActionsVisible = true),
+                        right = FocusRequester.Cancel,
+                        onFocused = navigation::focusContent,
+                    ),
+                    initiallyFocused = shouldAutoFocusContent && defaultContentKey == item.handle.path,
+                    onInitialFocus = onInitialFocus,
+                    onFocus = { onItemFocused(item) },
+                    onClick = { onOpen(item) },
                 )
             }
         }
@@ -463,125 +747,95 @@ private fun SortMenuButton(sort: BrowserSort, navigation: MainFocusNavigation, o
 }
 
 @Composable
-private fun SearchField(
-    query: String,
+private fun BrowserGrid(
+    visibleItems: List<FileItem>,
+    directoryEmpty: Boolean,
+    searchLoading: Boolean,
+    canNavigateUp: Boolean,
     navigation: MainFocusNavigation,
-    onQueryChange: (String) -> Unit,
-    onFocusChange: (Boolean) -> Unit,
+    thumbnails: Map<String, File>,
+    shouldAutoFocusContent: Boolean,
+    defaultContentKey: String?,
+    emptyDirectoryHint: String,
+    onInitialFocus: () -> Unit,
+    onItemFocused: (FileItem) -> Unit,
+    onOpen: (FileItem) -> Unit,
+    onNavigateUp: () -> Unit,
+    onThumbnailVisible: (FileItem) -> Unit,
+    onThumbnailHidden: (FileItem) -> Unit,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    var queryValue by remember { mutableStateOf(TextFieldValue(query)) }
-    LaunchedEffect(query) { if (query != queryValue.text) queryValue = TextFieldValue(query) }
-    val border = if (focused) Color(0xFFFFE3A1) else Color.Transparent
-    Row(
-        Modifier.width(240.dp).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(Color(0xFF101A26))
-            .border(BorderStroke(if (focused) 3.dp else 1.dp, border), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(painterResource(R.drawable.ic_search), contentDescription = null, tint = if (focused) Color(0xFFFFC857) else Color(0xFFA8B8C7), modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
-        BasicTextField(
-            value = queryValue,
-            onValueChange = { queryValue = it; onQueryChange(it.text) },
-            modifier = Modifier.weight(1f)
-                .focusProperties {
-                    up = navigation.selectedSource
-                    down = navigation.contentTarget
-                    left = navigation.path
-                    right = FocusRequester.Cancel
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val columns = (maxWidth / GridCellMinWidth).toInt().coerceIn(3, 6)
+        val totalItems = visibleItems.size + if (canNavigateUp) 1 else 0
+        val lastRowStart = if (totalItems == 0) 0 else ((totalItems - 1) / columns) * columns
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
+            modifier = Modifier
+                .testTag("browser-items")
+                .focusRequester(navigation.content)
+                .focusRestorer()
+                .focusGroup(),
+            horizontalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+        ) {
+            if (canNavigateUp) {
+                item(key = "navigate-up") {
+                    NavigateUpTile(
+                        focusModifier = contentFocusModifier(
+                            up = navigation.path,
+                            down = if (lastRowStart == 0) FocusRequester.Cancel else FocusRequester.Default,
+                            left = navigation.dockTarget(browserActionsVisible = true),
+                            right = if (totalItems == 1) FocusRequester.Cancel else FocusRequester.Default,
+                            onFocused = navigation::focusContent,
+                        ),
+                        initiallyFocused = shouldAutoFocusContent && defaultContentKey == NavigateUpFocusKey,
+                        onInitialFocus = onInitialFocus,
+                        onClick = onNavigateUp,
+                    )
                 }
-                .focusRequester(navigation.search)
-                .onFocusChanged {
-                focused = it.isFocused
-                onFocusChange(it.isFocused)
-                if (it.isFocused) navigation.focusToolbar(navigation.search)
-            }.onPreviewKeyEvent {
-                if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                when (it.key) {
-                    Key.DirectionLeft -> {
-                        if (queryValue.selection.min <= 0) {
-                            navigation.path.requestFocus()
-                            true
-                        } else false
-                    }
-                    Key.DirectionUp -> {
-                        navigation.selectedSource.requestFocus()
-                        true
-                    }
-                    Key.DirectionDown -> {
-                        if (navigation.contentAvailable) navigation.content.requestFocus()
-                        true
-                    }
-                    else -> false
+            }
+            when {
+                directoryEmpty -> item(span = { GridItemSpan(maxLineSpan) }) {
+                    EmptyState(
+                        icon = TvIcons.Folder,
+                        title = "目录为空",
+                        body = emptyDirectoryHint,
+                        modifier = Modifier.fillMaxWidth().height(240.dp),
+                    )
                 }
-            }.semantics { contentDescription = "搜索当前目录" },
-            singleLine = true,
-            textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFF3F7FA), fontSize = 18.sp),
-            cursorBrush = SolidColor(Color(0xFFC8D5E2)),
-            decorationBox = { innerTextField ->
-                Box(contentAlignment = Alignment.CenterStart) {
-                    if (query.isBlank()) Text("搜索当前目录", color = Color(0xFF728397), fontSize = 18.sp, maxLines = 1)
-                    innerTextField()
+                visibleItems.isEmpty() && searchLoading -> item(span = { GridItemSpan(maxLineSpan) }) {
+                    SearchingState(Modifier.fillMaxWidth().height(240.dp))
                 }
-            },
-        )
-    }
-}
-
-@Composable
-private fun ToolbarIconButton(iconRes: Int, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color(0xFF101A26), label = "$description-background")
-    val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "$description-tint")
-    Box(
-        modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(background)
-            .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent), RoundedCornerShape(10.dp))
-            .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
-            .semantics { contentDescription = description },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(painterResource(iconRes), contentDescription = description, tint = tint, modifier = Modifier.size(20.dp))
-    }
-}
-
-private val sortOptions = BrowserSortField.entries.flatMap { field ->
-    SortDirection.entries.map { direction -> BrowserSort(field, direction) }
-}
-
-private fun BrowserSort.label(): String {
-    return "${fieldLabel()} ${if (direction == SortDirection.Ascending) "正序" else "倒序"}"
-}
-
-private fun BrowserSort.fieldLabel(): String {
-    val fieldLabel = when (field) {
-        BrowserSortField.Name -> "文件名"
-        BrowserSortField.Size -> "文件大小"
-        BrowserSortField.ModifiedTime -> "最后修改时间"
-    }
-    return fieldLabel
-}
-
-private fun BrowserSort.directionArrow(): String = if (direction == SortDirection.Ascending) "↑" else "↓"
-
-private fun BrowserSort.iconRes(): Int = when (field) {
-    BrowserSortField.Name -> R.drawable.ic_sort_name
-    BrowserSortField.Size -> R.drawable.ic_sort_size
-    BrowserSortField.ModifiedTime -> R.drawable.ic_sort_time
-}
-
-@Composable
-private fun PathEditButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val background by animateColorAsState(if (focused) Color(0xFFFFC857) else Color.Transparent, label = "path-edit-background")
-    val tint by animateColorAsState(if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), label = "path-edit-tint")
-    Box(
-        modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(background)
-            .border(BorderStroke(if (focused) 3.dp else 1.dp, if (focused) Color(0xFFFFE3A1) else Color.Transparent), RoundedCornerShape(6.dp))
-            .onFocusChanged { focused = it.isFocused }.focusable().tvOkClick(onClick)
-            .semantics { contentDescription = "编辑路径" },
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(painterResource(R.drawable.ic_edit), contentDescription = "编辑路径", tint = tint, modifier = Modifier.size(20.dp))
+                visibleItems.isEmpty() -> item(span = { GridItemSpan(maxLineSpan) }) {
+                    EmptyState(
+                        icon = TvIcons.Search,
+                        title = "未找到匹配项目",
+                        body = "尝试修改搜索词。",
+                        modifier = Modifier.fillMaxWidth().height(240.dp),
+                    )
+                }
+                else -> itemsIndexed(visibleItems, key = { _, item -> item.handle.sourceKey + item.handle.path }) { index, item ->
+                    val position = index + if (canNavigateUp) 1 else 0
+                    FileTile(
+                        item,
+                        thumbnails[MainViewModel.thumbKey(item)],
+                        onThumbnailVisible,
+                        onThumbnailHidden,
+                        focusModifier = contentFocusModifier(
+                            up = if (position < columns) navigation.path else FocusRequester.Default,
+                            down = if (position >= lastRowStart) FocusRequester.Cancel else FocusRequester.Default,
+                            left = if (position % columns == 0) navigation.dockTarget(browserActionsVisible = true) else FocusRequester.Default,
+                            right = if (position % columns == columns - 1 || position == totalItems - 1) FocusRequester.Cancel else FocusRequester.Default,
+                            onFocused = navigation::focusContent,
+                        ),
+                        initiallyFocused = shouldAutoFocusContent && defaultContentKey == item.handle.path,
+                        onInitialFocus = onInitialFocus,
+                        onFocus = { onItemFocused(item) },
+                        onClick = { onOpen(item) },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -620,32 +874,42 @@ private fun FileRow(
         onClick,
         touchFocusFirst = true,
     ) { focused ->
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MediaThumb(item, thumbnail, Modifier.size(48.dp), onThumbnailVisible, onThumbnailHidden)
-            Text(
-                item.name,
-                modifier = Modifier.width(360.dp).then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
-                color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA),
-                fontSize = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
-            )
-            Text(
-                Formatters.size(item.size),
-                modifier = Modifier.width(120.dp),
-                color = if (focused) Color(0xFF4C3B12) else Color(0xFFA8B8C7),
-                fontSize = 16.sp,
-                maxLines = 1,
-            )
-            Text(
-                Formatters.time(item.modifiedAtMillis),
-                modifier = Modifier.weight(1f),
-                color = if (focused) Color(0xFF4C3B12) else Color(0xFFA8B8C7),
-                fontSize = 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        Row(
+            Modifier
+                .heightIn(min = TvSizes.rowMin)
+                .padding(TvSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(TvSpacing.md),
+        ) {
+            MediaThumb(item, thumbnail, Modifier.size(TvSizes.action), onThumbnailVisible, onThumbnailHidden)
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(TvSpacing.xs),
+            ) {
+                Text(
+                    text = item.name,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
+                    color = if (focused) TvColors.OnFocus else TvColors.TextPrimary,
+                    style = TvType.rowTitle,
+                    maxLines = 1,
+                    overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(TvSpacing.md),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    metaEntries(item).forEach { entry ->
+                        Text(
+                            text = entry,
+                            color = if (focused) TvColors.OnFocusMuted else TvColors.TextSecondary,
+                            style = TvType.meta,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -653,33 +917,71 @@ private fun FileRow(
 @Composable
 private fun NavigateUpRow(focusModifier: Modifier, initiallyFocused: Boolean, onInitialFocus: () -> Unit, onClick: () -> Unit) {
     FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus = {}, onClick = onClick) { focused ->
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(painterResource(R.drawable.ic_back), contentDescription = null, tint = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), modifier = Modifier.size(48.dp))
-            Text("返回上一级", color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            Modifier
+                .heightIn(min = TvSizes.rowMin)
+                .padding(TvSpacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(TvSpacing.md),
+        ) {
+            Box(Modifier.size(TvSizes.action), contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = TvIcons.FolderUp,
+                    contentDescription = null,
+                    tint = if (focused) TvColors.OnFocus else TvColors.Accent,
+                    modifier = Modifier.size(TvSizes.iconLarge),
+                )
+            }
+            Text(
+                text = "返回上一级",
+                color = if (focused) TvColors.OnFocus else TvColors.TextPrimary,
+                style = TvType.rowTitle,
+                maxLines = 1,
+            )
         }
     }
 }
 
 @Composable
 private fun NavigateUpTile(focusModifier: Modifier, initiallyFocused: Boolean, onInitialFocus: () -> Unit, onClick: () -> Unit) {
-    FocusSurface(Modifier.fillMaxWidth().then(focusModifier), initiallyFocused, onInitialFocus, onFocus = {}, onClick = onClick) { focused ->
-        GridTileContent(focused, "返回上一级") { modifier ->
-            Box(modifier.clip(RoundedCornerShape(8.dp)).background(if (focused) Color(0xFFE7B94F) else Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
-                Icon(painterResource(R.drawable.ic_back), contentDescription = null, tint = if (focused) Color(0xFF151007) else Color(0xFF7CC7D8), modifier = Modifier.size(34.dp))
+    FocusSurface(
+        Modifier.fillMaxWidth().then(focusModifier),
+        initiallyFocused,
+        onInitialFocus,
+        onFocus = {},
+        onClick = onClick,
+        scaleOnFocus = true,
+    ) { focused ->
+        Column(
+            Modifier.padding(TvSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.xs),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 10f)
+                    .clip(RoundedCornerShape(TvRadius.sm))
+                    .background(if (focused) TvColors.Focus else TvColors.SurfaceSunken),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = TvIcons.FolderUp,
+                    contentDescription = null,
+                    tint = if (focused) TvColors.OnFocus else TvColors.Accent,
+                    modifier = Modifier.size(ThumbIconSize),
+                )
             }
+            Text(
+                text = "返回上一级",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
+                color = if (focused) TvColors.OnFocus else TvColors.TextPrimary,
+                style = TvType.gridTitle,
+                maxLines = 1,
+                overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
+            )
         }
-    }
-}
-
-@Composable
-private fun InlineMessage(title: String, body: String) {
-    Column(
-        Modifier.fillMaxWidth().padding(vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(title, color = Color(0xFFC8D5E2), fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text(body, color = Color(0xFFA8B8C7), fontSize = 18.sp)
     }
 }
 
@@ -702,26 +1004,35 @@ private fun FileTile(
         onFocus,
         onClick,
         touchFocusFirst = true,
+        scaleOnFocus = true,
     ) { focused ->
-        GridTileContent(focused, item.name) { modifier ->
-            MediaThumb(item, thumbnail, modifier, onThumbnailVisible, onThumbnailHidden)
-        }
-    }
-}
-
-@Composable
-private fun GridTileContent(focused: Boolean, title: String, media: @Composable (Modifier) -> Unit) {
-    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        media(Modifier.fillMaxWidth().aspectRatio(16f / 10f))
-        Box(Modifier.fillMaxWidth().height(28.dp), contentAlignment = Alignment.CenterStart) {
+        Column(
+            Modifier.padding(TvSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.xs),
+        ) {
+            MediaThumb(
+                item,
+                thumbnail,
+                Modifier.fillMaxWidth().aspectRatio(16f / 10f),
+                onThumbnailVisible,
+                onThumbnailHidden,
+                focused = focused,
+            )
             Text(
-                title,
-                modifier = Modifier.fillMaxWidth().then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
-                color = if (focused) Color(0xFF151007) else Color(0xFFF3F7FA),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
+                text = item.name,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier),
+                color = if (focused) TvColors.OnFocus else TvColors.TextPrimary,
+                style = TvType.gridTitle,
                 maxLines = 1,
                 overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
+            )
+            Text(
+                text = gridMeta(item),
+                color = if (focused) TvColors.OnFocusMuted else TvColors.TextSecondary,
+                style = TvType.meta,
+                maxLines = 1,
             )
         }
     }
@@ -735,26 +1046,59 @@ private fun FocusSurface(
     onFocus: () -> Unit,
     onClick: () -> Unit,
     touchFocusFirst: Boolean = false,
+    scaleOnFocus: Boolean = false,
     content: @Composable (Boolean) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
-    val bg by animateColorAsState(if (focused) Color(0xFFFFC857) else Color(0xFF152232), label = "focus-bg")
-    val border = if (focused) Color(0xFFFFE3A1) else Color(0xFF24364A)
+    val motionEnabled = LocalTvMotionEnabled.current
+    val background by animateColorAsState(
+        targetValue = if (focused) TvColors.Focus else TvColors.Surface,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "focus-surface-background",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) TvColors.FocusRing else TvColors.OutlineVariant,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "focus-surface-border-color",
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (focused) 2.dp else 1.dp,
+        animationSpec = if (motionEnabled) TvMotion.color<Dp>() else tween(durationMillis = 0),
+        label = "focus-surface-border-width",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (focused && scaleOnFocus) GridFocusScale else 1f,
+        animationSpec = if (motionEnabled) TvMotion.expand<Float>(GridFocusScaleMs) else tween(durationMillis = 0),
+        label = "focus-surface-scale",
+    )
     LaunchedEffect(initiallyFocused) {
-        if (initiallyFocused && focusRequester.requestFocus()) onInitialFocus()
+        if (!initiallyFocused) return@LaunchedEffect
+        // 列表项在首帧可能尚未完成布局，逐帧重试直到焦点真正落地。
+        repeat(10) {
+            withFrameNanos { }
+            if (runCatching { focusRequester.requestFocus() }.getOrDefault(false)) {
+                onInitialFocus()
+                return@LaunchedEffect
+            }
+        }
     }
     Box(
-        modifier.clip(RoundedCornerShape(10.dp))
-            .background(bg)
-            .border(BorderStroke(if (focused) 3.dp else 1.dp, border), RoundedCornerShape(10.dp))
+        modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(TvControlShape)
+            .background(background)
+            .border(borderWidth, borderColor, TvControlShape)
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
             }
             .focusRequester(focusRequester)
             .focusable()
-            .tvOkClick(
+            .tvClickable(
                 onClick = onClick,
                 onTouchClick = {
                     if (touchFocusFirst && !focused) focusRequester.requestFocus() else onClick()
@@ -767,39 +1111,85 @@ private fun FocusSurface(
 
 @Composable
 private fun PreviewPanel(item: FileItem?, thumbnail: File?, metadata: BrowserPreviewMetadataState, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit) {
-    Column(Modifier.width(260.dp).fillMaxHeight().testTag("preview-panel").clip(RoundedCornerShape(12.dp)).background(Color(0xFF101A26)).padding(16.dp)) {
-        Text("快速预览", color = Color(0xFF7CC7D8), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(14.dp))
+    Column(
+        Modifier
+            .width(TvSizes.previewPanel)
+            .fillMaxHeight()
+            .testTag("preview-panel")
+            .clip(TvPanelShape)
+            .background(TvColors.Panel)
+            .padding(TvSpacing.lg),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("快速预览", color = TvColors.Accent, style = TvType.label)
+            item?.let { TvChip(kindLabel(it.kind), accent = true) }
+        }
+        Spacer(Modifier.height(TvSpacing.md))
         Column(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .testTag("preview-content"),
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
         ) {
             if (item == null) {
-                Text("选择文件后显示预览。", color = Color(0xFFA8B8C7), fontSize = 18.sp)
+                Text("选择文件后显示预览。", color = TvColors.TextSecondary, style = TvType.body)
                 return@Column
             }
-            MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 11f), onThumbnailVisible, onThumbnailHidden)
-            Spacer(Modifier.height(16.dp))
-            Text(item.name, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 3)
-            Spacer(Modifier.height(8.dp))
-            Text(kindLabel(item.kind), color = Color(0xFFFFC857), fontSize = 18.sp)
-            Text(meta(item), color = Color(0xFFA8B8C7), fontSize = 16.sp)
+            MediaThumb(item, thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 10f), onThumbnailVisible, onThumbnailHidden)
+            Text(item.name, color = TvColors.TextPrimary, style = TvType.rowTitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val size = Formatters.size(item.size)
+            if (size.isNotBlank()) TvMetaRow(TvIcons.Database, size)
+            val time = Formatters.time(item.modifiedAtMillis)
+            if (time.isNotBlank()) TvMetaRow(TvIcons.Timer, time)
+            TvMetaRow(TvIcons.FileText, kindLabel(item.kind))
             val metadataMatchesItem = metadata.itemKey == MainViewModel.thumbKey(item)
-            if (metadataMatchesItem && metadata.loading) {
-                Spacer(Modifier.height(12.dp))
-                Text("正在读取媒体信息…", color = Color(0xFF728397), fontSize = 16.sp)
-            } else if (metadataMatchesItem && metadata.textSnippet != null) {
-                Spacer(Modifier.height(12.dp))
-                Text(metadata.textSnippet, color = Color(0xFFC8D5E2), fontSize = 16.sp, maxLines = 5, overflow = TextOverflow.Ellipsis)
-            } else if (metadataMatchesItem && metadata.metadata.entries.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                metadata.metadata.entries.forEach { entry ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(entry.label, modifier = Modifier.width(52.dp), color = Color(0xFF7CC7D8), fontSize = 16.sp)
-                        Text(entry.value, modifier = Modifier.weight(1f), color = Color(0xFFC8D5E2), fontSize = 16.sp, maxLines = 2)
+            val textSnippet = metadata.textSnippet
+            when {
+                metadataMatchesItem && metadata.loading -> Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+                ) {
+                    TvSpinner(size = TvSizes.icon)
+                    Text("正在读取媒体信息…", color = TvColors.TextMuted, style = TvType.caption)
+                }
+                metadataMatchesItem && textSnippet != null -> Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(TvRadius.md))
+                        .background(TvColors.SurfaceSunken)
+                        .padding(TvSpacing.md),
+                ) {
+                    Text(
+                        text = textSnippet,
+                        color = TvColors.TextSecondary,
+                        style = TvType.meta,
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                metadataMatchesItem && metadata.metadata.entries.isNotEmpty() -> metadata.metadata.entries.forEach { entry ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(TvSpacing.sm)) {
+                        Text(
+                            text = entry.label,
+                            modifier = Modifier.width(52.dp),
+                            color = TvColors.Accent,
+                            style = TvType.meta,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = entry.value,
+                            modifier = Modifier.weight(1f),
+                            color = TvColors.TextSecondary,
+                            style = TvType.meta,
+                            maxLines = 2,
+                        )
                     }
                 }
             }
@@ -808,22 +1198,35 @@ private fun PreviewPanel(item: FileItem?, thumbnail: File?, metadata: BrowserPre
 }
 
 @Composable
-private fun MediaThumb(item: FileItem, thumbnail: File?, modifier: Modifier, onThumbnailVisible: (FileItem) -> Unit, onThumbnailHidden: (FileItem) -> Unit) {
+private fun MediaThumb(
+    item: FileItem,
+    thumbnail: File?,
+    modifier: Modifier,
+    onThumbnailVisible: (FileItem) -> Unit,
+    onThumbnailHidden: (FileItem) -> Unit,
+    focused: Boolean = false,
+) {
     DisposableEffect(item, thumbnail) {
         val requested = item.kind in setOf(FileKind.Image, FileKind.Audio, FileKind.Video) && thumbnail == null
         if (requested) onThumbnailVisible(item)
         onDispose { if (requested) onThumbnailHidden(item) }
     }
     val model: Any? = thumbnail
-    Box(modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFF0D1621)), contentAlignment = Alignment.Center) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(TvRadius.sm))
+            // 网格卡片聚焦时让缩略图井与卡片同色，避免深色井吞掉深色图标。
+            .background(if (focused) TvColors.Focus else TvColors.SurfaceSunken),
+        contentAlignment = Alignment.Center,
+    ) {
         if (model != null) {
             AsyncImage(model = model, contentDescription = item.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } else {
             Icon(
-                painterResource(fileKindIconRes(item.kind)),
+                imageVector = fileKindIcon(item.kind),
                 contentDescription = kindLabel(item.kind),
-                tint = Color(0xFFC9D8E5),
-                modifier = Modifier.size(38.dp),
+                tint = if (focused) TvColors.OnFocus else TvColors.TextSecondary,
+                modifier = Modifier.size(ThumbIconSize),
             )
         }
     }
@@ -831,25 +1234,124 @@ private fun MediaThumb(item: FileItem, thumbnail: File?, modifier: Modifier, onT
 
 @Composable
 private fun LoadingPanel() {
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+    ) {
+        repeat(6) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = TvSizes.rowMin)
+                    .padding(TvSpacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(TvSpacing.md),
+            ) {
+                TvSkeleton(Modifier.size(TvSizes.action))
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+                ) {
+                    TvSkeleton(Modifier.fillMaxWidth(0.6f).height(18.dp))
+                    TvSkeleton(Modifier.fillMaxWidth(0.35f).height(14.dp))
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "正在读取目录…",
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+            color = TvColors.TextMuted,
+            style = TvType.caption,
+        )
+        Spacer(Modifier.height(TvSpacing.md))
+    }
+}
+
+@Composable
+private fun ErrorPanel(cause: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            Text("正在读取目录...", color = Color(0xFFC8D5E2), fontSize = 22.sp)
+        Column(
+            Modifier.padding(TvSpacing.xl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+        ) {
+            Icon(
+                imageVector = TvIcons.AlertTriangle,
+                contentDescription = null,
+                tint = TvColors.Error,
+                modifier = Modifier.size(StateIconSize),
+            )
+            Text("连接或读取失败", color = TvColors.Error, style = TvType.sectionTitle)
+            Text(cause, color = TvColors.TextPrimary, style = TvType.body)
+            Text("使用左侧刷新按钮重试", color = TvColors.TextMuted, style = TvType.caption)
         }
     }
 }
 
 @Composable
-private fun MessagePanel(title: String, body: String, color: Color) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, color = color, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            Text(body, color = Color(0xFFC8D5E2), fontSize = 20.sp)
+private fun EmptyState(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = TvColors.Accent,
+                modifier = Modifier.size(StateIconSize),
+            )
+            Text(title, color = TvColors.TextPrimary, style = TvType.sectionTitle)
+            Text(body, color = TvColors.TextSecondary, style = TvType.body)
         }
     }
 }
 
-private fun meta(item: FileItem): String = listOf(Formatters.size(item.size), Formatters.time(item.modifiedAtMillis)).filter { it.isNotBlank() }.joinToString("  ").ifBlank { " " }
+@Composable
+private fun SearchingState(modifier: Modifier) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
+        ) {
+            TvSpinner(size = TvSizes.iconLarge)
+            Text("正在递归搜索", color = TvColors.TextPrimary, style = TvType.sectionTitle)
+            Text("正在检索当前目录及其子目录。", color = TvColors.TextSecondary, style = TvType.body)
+        }
+    }
+}
+
+private val sortOptions = BrowserSortField.entries.flatMap { field ->
+    SortDirection.entries.map { direction -> BrowserSort(field, direction) }
+}
+
+private fun BrowserSort.fieldLabel(): String = when (field) {
+    BrowserSortField.Name -> "文件名"
+    BrowserSortField.Size -> "文件大小"
+    BrowserSortField.ModifiedTime -> "最后修改时间"
+}
+
+private fun BrowserSort.directionArrow(): String = if (direction == SortDirection.Ascending) "↑" else "↓"
+
+private fun BrowserSort.fieldIcon(): ImageVector = when (field) {
+    BrowserSortField.Name -> TvIcons.FileText
+    BrowserSortField.Size -> TvIcons.Database
+    BrowserSortField.ModifiedTime -> TvIcons.Timer
+}
+
+private fun metaEntries(item: FileItem): List<String> = buildList {
+    if (item.kind == FileKind.Directory) {
+        add(kindLabel(item.kind))
+        Formatters.time(item.modifiedAtMillis).takeIf { it.isNotBlank() }?.let { add(it) }
+    } else {
+        Formatters.size(item.size).takeIf { it.isNotBlank() }?.let { add(it) }
+        Formatters.time(item.modifiedAtMillis).takeIf { it.isNotBlank() }?.let { add(it) }
+        add(kindLabel(item.kind))
+    }
+}
+
+private fun gridMeta(item: FileItem): String = Formatters.size(item.size).ifBlank { kindLabel(item.kind) }
 
 private fun kindLabel(kind: FileKind): String = when (kind) {
     FileKind.Directory -> "文件夹"
@@ -860,11 +1362,12 @@ private fun kindLabel(kind: FileKind): String = when (kind) {
     FileKind.Other -> "文件"
 }
 
-internal fun fileKindIconRes(kind: FileKind): Int = when (kind) {
-    FileKind.Directory -> R.drawable.ic_folder
-    FileKind.Image -> R.drawable.ic_image
-    FileKind.Text -> R.drawable.ic_text
-    FileKind.Audio -> R.drawable.ic_disc
-    FileKind.Video -> R.drawable.ic_video
-    FileKind.Other -> R.drawable.ic_file
+/** 每种文件类型对应的 Lucide 图标，列表/网格缩略图占位共用。 */
+internal fun fileKindIcon(kind: FileKind): ImageVector = when (kind) {
+    FileKind.Directory -> TvIcons.Folder
+    FileKind.Image -> TvIcons.Image
+    FileKind.Text -> TvIcons.FileText
+    FileKind.Audio -> TvIcons.Disc
+    FileKind.Video -> TvIcons.Film
+    FileKind.Other -> TvIcons.File
 }
