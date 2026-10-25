@@ -280,13 +280,10 @@ private fun SideDock(
             // 聚焦时右侧浮出的标签药丸要绘制在内容区之上。
             .zIndex(2f)
             .background(TvColors.Panel).padding(vertical = TvSpacing.lg)
-            .focusRestorer(fallback = navigation.dockTarget(browserActionsVisible))
             .focusGroup(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (browserActionsVisible) {
-            // 聚焦药丸横向浮出 Dock，上部动作必须从顶栏下沿开始，避免遮挡来源按钮。
-            Spacer(Modifier.height(TvSizes.toolbar + TvSpacing.lg))
             val viewLabel = if (browserViewMode == BrowserViewMode.Grid) "切换为列表视图" else "切换为网格视图"
             val viewIcon = if (browserViewMode == BrowserViewMode.Grid) TvIcons.List else TvIcons.Grid
             DockAction(viewIcon, viewLabel, navigation.view, FocusRequester.Cancel, navigation.refresh, dockRight, navigation, onToggleView)

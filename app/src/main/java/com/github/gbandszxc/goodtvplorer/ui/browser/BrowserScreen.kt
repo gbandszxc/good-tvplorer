@@ -517,7 +517,15 @@ private fun SearchField(
         navigation.path.requestFocus()
     }
 
-    Row(
+    // 折叠态容器内容宽 32dp，22dp 图标以 5dp 起始内边距精确居中；
+    // 展开后图标回到左侧，输入框让出 26dp（图标 + 4dp 间距）。
+    val iconStart by animateDpAsState(
+        targetValue = if (expanded) 0.dp else 5.dp,
+        animationSpec = if (motionEnabled) TvMotion.color<Dp>() else tween(durationMillis = 0),
+        label = "search-icon-start",
+    )
+
+    Box(
         Modifier
             .width(width)
             .height(TvSizes.action)
@@ -529,15 +537,7 @@ private fun SearchField(
                 detectTapGestures { navigation.search.requestFocus() }
             }
             .padding(horizontal = TvSpacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = TvIcons.Search,
-            contentDescription = null,
-            tint = if (focused) TvColors.Focus else TvColors.TextSecondary,
-            modifier = Modifier.size(TvSizes.icon),
-        )
-        Spacer(Modifier.width(TvSpacing.xs))
         BasicTextField(
             value = queryValue,
             onValueChange = {
@@ -545,7 +545,8 @@ private fun SearchField(
                 onQueryChange(it.text)
             },
             modifier = Modifier
-                .weight(1f)
+                .fillMaxSize()
+                .padding(start = if (expanded) 26.dp else 0.dp)
                 .focusProperties {
                     up = navigation.selectedSource
                     down = navigation.contentTarget
@@ -597,6 +598,15 @@ private fun SearchField(
                     innerTextField()
                 }
             },
+        )
+        Icon(
+            imageVector = TvIcons.Search,
+            contentDescription = null,
+            tint = if (focused) TvColors.Focus else TvColors.TextSecondary,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = iconStart)
+                .size(TvSizes.icon),
         )
     }
 }
