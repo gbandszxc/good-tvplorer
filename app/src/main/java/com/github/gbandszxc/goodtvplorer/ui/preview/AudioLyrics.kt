@@ -10,14 +10,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,15 +34,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.gbandszxc.goodtvplorer.domain.TimedTextCue
 import com.github.gbandszxc.goodtvplorer.domain.currentCueIndex
-import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvActionButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvSpinner
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvColors
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvIcons
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvRadius
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSizes
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSpacing
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvType
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
@@ -53,6 +63,22 @@ import kotlin.math.abs
 private const val FOLLOW_RESUME_DELAY_MS = 4_000L
 private const val NEARBY_CUE_COUNT = 3
 
+/** 歌词面板当前行 / 其余行。 */
+private val PanelCurrentStyle = TvType.body.copy(
+    fontSize = 28.sp,
+    lineHeight = 40.sp,
+    fontWeight = FontWeight.SemiBold,
+)
+private val PanelOtherStyle = TvType.body.copy(fontSize = 22.sp, lineHeight = 32.sp)
+
+/** 全屏歌词当前行 / 其余行。 */
+private val FullscreenCurrentStyle = TvType.body.copy(
+    fontSize = 34.sp,
+    lineHeight = 48.sp,
+    fontWeight = FontWeight.SemiBold,
+)
+private val FullscreenOtherStyle = TvType.body.copy(fontSize = 26.sp, lineHeight = 40.sp)
+
 @Composable
 fun AudioLyricsPanel(
     cues: List<TimedTextCue>,
@@ -60,7 +86,6 @@ fun AudioLyricsPanel(
     loading: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
     val listState = rememberLazyListState()
     val currentIndex = currentCueIndex(cues, positionMs)
     val following = rememberFollowEnabled(listState)
@@ -68,15 +93,17 @@ fun AudioLyricsPanel(
     Box(
         modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(8.dp))
-            .background(colorScheme.surfaceVariant)
-            .padding(24.dp),
+            .clip(RoundedCornerShape(TvRadius.lg))
+            .background(TvColors.SurfaceSunken)
+            .padding(TvSpacing.xl),
     ) {
         if (cues.isEmpty()) {
             LyricsPlaceholder(
                 loading = loading,
-                primarySize = 22.sp,
-                hintSize = 18.sp,
+                titleStyle = TvType.body,
+                hintStyle = TvType.meta,
+                spinnerSize = 28.dp,
+                iconSize = 32.dp,
                 modifier = Modifier.align(Alignment.Center),
             )
         } else {
@@ -89,10 +116,8 @@ fun AudioLyricsPanel(
                     val current = index == currentIndex
                     Text(
                         text = cue.text,
-                        color = if (current) colorScheme.onBackground else colorScheme.onSurfaceVariant,
-                        fontSize = if (current) 28.sp else 22.sp,
-                        lineHeight = if (current) 40.sp else 32.sp,
-                        fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (current) TvColors.TextPrimary else TvColors.TextSecondary,
+                        style = if (current) PanelCurrentStyle else PanelOtherStyle,
                     )
                 }
             }
@@ -111,30 +136,33 @@ fun AudioLyricsFullscreen(
     backButtonFocus: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
     val listState = rememberLazyListState()
     val currentIndex = currentCueIndex(cues, positionMs)
     val following = rememberFollowEnabled(listState)
     FollowCurrentCue(listState, currentIndex, following)
-    Box(modifier.fillMaxSize().background(colorScheme.background)) {
+    Box(modifier.fillMaxSize().background(TvColors.Background)) {
         Column(Modifier.fillMaxSize()) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(TvSizes.toolbar)
+                    .padding(horizontal = TvSpacing.xxl),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                TvActionButton(
+                    icon = TvIcons.ArrowLeft,
+                    label = "返回",
+                    onClick = onBack,
+                    modifier = Modifier.focusRequester(backButtonFocus),
+                )
+                Spacer(Modifier.width(TvSpacing.md))
                 Text(
                     text = "歌词全屏 · $title",
                     modifier = Modifier.weight(1f),
-                    color = colorScheme.onBackground,
-                    fontSize = 26.sp,
+                    color = TvColors.TextPrimary,
+                    style = TvType.sectionTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(20.dp))
-                TvButton(
-                    text = "返回",
-                    modifier = Modifier.focusRequester(backButtonFocus),
-                    onClick = onBack,
                 )
             }
             if (cues.isEmpty()) {
@@ -144,8 +172,10 @@ fun AudioLyricsFullscreen(
                 ) {
                     LyricsPlaceholder(
                         loading = loading,
-                        primarySize = 26.sp,
-                        hintSize = 20.sp,
+                        titleStyle = TvType.sectionTitle,
+                        hintStyle = TvType.meta,
+                        spinnerSize = 36.dp,
+                        iconSize = 48.dp,
                     )
                 }
             } else {
@@ -166,11 +196,9 @@ fun AudioLyricsFullscreen(
                                 .pointerInput(cue.startMs, seekable) {
                                     detectTapGestures { if (seekable) onSeek(cue.startMs) }
                                 }
-                                .padding(vertical = 4.dp),
-                            color = if (current) colorScheme.onBackground else colorScheme.onSurfaceVariant,
-                            fontSize = if (current) 34.sp else 26.sp,
-                            lineHeight = if (current) 48.sp else 40.sp,
-                            fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
+                                .padding(vertical = TvSpacing.xs),
+                            color = if (current) TvColors.TextPrimary else TvColors.TextSecondary,
+                            style = if (current) FullscreenCurrentStyle else FullscreenOtherStyle,
                             textAlign = TextAlign.Center,
                         )
                     }
@@ -180,29 +208,47 @@ fun AudioLyricsFullscreen(
     }
 }
 
+/**
+ * 歌词占位：加载时显示自绘旋转弧线；无歌词时用 Music 图标 + 标题 + 说明，
+ * 不使用 Material 进度控件或空态组件。
+ */
 @Composable
 private fun LyricsPlaceholder(
     loading: Boolean,
-    primarySize: TextUnit,
-    hintSize: TextUnit,
+    titleStyle: TextStyle,
+    hintStyle: TextStyle,
+    spinnerSize: Dp,
+    iconSize: Dp,
     modifier: Modifier = Modifier,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(TvSpacing.sm),
     ) {
-        Text(
-            text = if (loading) "歌词加载中…" else "未找到歌词",
-            color = colorScheme.onBackground,
-            fontSize = primarySize,
-        )
-        if (!loading) {
+        if (loading) {
+            TvSpinner(size = spinnerSize)
+            Text(
+                text = "歌词加载中…",
+                color = TvColors.TextPrimary,
+                style = titleStyle,
+            )
+        } else {
+            Icon(
+                imageVector = TvIcons.Music,
+                contentDescription = null,
+                tint = TvColors.TextMuted,
+                modifier = Modifier.size(iconSize),
+            )
+            Text(
+                text = "未找到歌词",
+                color = TvColors.TextPrimary,
+                style = titleStyle,
+            )
             Text(
                 text = "支持同名 .lrc 或内嵌歌词",
-                color = colorScheme.onSurfaceVariant,
-                fontSize = hintSize,
+                color = TvColors.TextSecondary,
+                style = hintStyle,
             )
         }
     }

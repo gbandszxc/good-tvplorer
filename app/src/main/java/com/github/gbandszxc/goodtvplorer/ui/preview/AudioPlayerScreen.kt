@@ -24,9 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +43,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -52,24 +51,29 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.github.gbandszxc.goodtvplorer.R
-import com.github.gbandszxc.goodtvplorer.ui.components.TvButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvActionButton
+import com.github.gbandszxc.goodtvplorer.ui.components.TvChip
 import com.github.gbandszxc.goodtvplorer.ui.components.TvSeekBar
-import com.github.gbandszxc.goodtvplorer.ui.components.tvOkClick
+import com.github.gbandszxc.goodtvplorer.ui.components.TvSpinner
+import com.github.gbandszxc.goodtvplorer.ui.components.tvClickable
+import com.github.gbandszxc.goodtvplorer.ui.theme.LocalTvMotionEnabled
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvColors
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvIcons
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvMotion
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvRadius
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSizes
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSpacing
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvType
 import com.github.gbandszxc.goodtvplorer.viewmodel.PreviewState
 import java.io.File
 import java.util.concurrent.TimeUnit
-
-/** 项目统一的焦点描边色，与 TvButton 保持一致。 */
-private val FocusRingColor = Color(0xFFFFE3A1)
 
 private enum class AudioOverlay { None, Cover, Lyrics }
 
@@ -80,7 +84,6 @@ fun AudioPreview(
     audio: AudioPlaybackState,
     actions: AudioPlayerActions,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
     val title = audio.title.ifBlank { name }
     val subtitle = listOf(audio.artist, audio.album)
         .filter { it.isNotBlank() }
@@ -122,43 +125,29 @@ fun AudioPreview(
     BackHandler(enabled = overlay == AudioOverlay.Cover) { closeOverlay(coverFocus) }
     BackHandler(enabled = overlay == AudioOverlay.Lyrics) { closeOverlay(lyricsButtonFocus) }
 
-    Box(Modifier.fillMaxSize().background(colorScheme.background)) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 36.dp, vertical = 24.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        color = colorScheme.onBackground,
-                        fontSize = 28.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (subtitle.isNotBlank()) {
-                        Text(
-                            text = subtitle,
-                            color = colorScheme.onSurfaceVariant,
-                            fontSize = 18.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Spacer(Modifier.width(20.dp))
-                TvButton("返回", onClick = actions.onBack)
-            }
+    Box(Modifier.fillMaxSize().background(TvColors.Background)) {
+        Column(Modifier.fillMaxSize().padding(TvSpacing.xxl)) {
+            AudioTopBar(title = title, subtitle = subtitle, onBack = actions.onBack)
             when {
                 state.loading -> Box(
                     Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
-                state.error != null -> Box(
-                    Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) { Text(state.error, color = colorScheme.error, fontSize = 26.sp) }
-                state.media == null -> Box(
-                    Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) { Text("没有可用的音频", color = colorScheme.onSurfaceVariant, fontSize = 26.sp) }
+                ) {
+                    TvSpinner(size = 36.dp)
+                }
+                state.error != null -> AudioMessage(
+                    icon = TvIcons.AlertTriangle,
+                    iconTint = TvColors.Error,
+                    title = state.error,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    titleColor = TvColors.Error,
+                )
+                state.media == null -> AudioMessage(
+                    icon = TvIcons.Disc,
+                    iconTint = TvColors.TextMuted,
+                    title = "没有可用的音频",
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                )
                 else -> AudioBody(
                     state = state,
                     audio = audio,
@@ -209,6 +198,76 @@ fun AudioPreview(
     }
 }
 
+/** 顶栏：返回图标动作 + 标题 + 艺术家/专辑副标题，固定 56dp 高。 */
+@Composable
+private fun AudioTopBar(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(TvSizes.toolbar),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TvActionButton(
+            icon = TvIcons.ArrowLeft,
+            label = "返回",
+            onClick = onBack,
+        )
+        Spacer(Modifier.width(TvSpacing.md))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = TvColors.TextPrimary,
+                style = TvType.sectionTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle.isNotBlank()) {
+                Text(
+                    text = subtitle,
+                    color = TvColors.TextSecondary,
+                    style = TvType.meta,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 居中的图标 + 标题空态/错误态。
+ */
+@Composable
+private fun AudioMessage(
+    icon: ImageVector,
+    iconTint: Color,
+    title: String,
+    modifier: Modifier = Modifier,
+    titleColor: Color = TvColors.TextSecondary,
+) {
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.md),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(TvSizes.action),
+            )
+            Text(
+                text = title,
+                color = titleColor,
+                style = TvType.body,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AudioBody(
@@ -224,35 +283,40 @@ private fun AudioBody(
     onOpenSleepTimer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
     val seekFocus = remember { FocusRequester() }
+    val timerMinutes = sleepTimerMinutes(audio.sleepTimerRemainingMs)
     Column(modifier.fillMaxWidth()) {
         Row(
             Modifier
-                .padding(top = 18.dp)
+                .padding(top = TvSpacing.lg)
                 .weight(1f)
                 .fillMaxWidth()
                 .horizontalSwipe(actions.onPrevious, actions.onNext),
-            horizontalArrangement = Arrangement.spacedBy(28.dp),
+            horizontalArrangement = Arrangement.spacedBy(TvSpacing.xl),
         ) {
             CoverPane(
                 cover = state.cover,
                 onOpen = onOpenCover,
                 focusRequester = coverFocus,
                 playFocusRequester = playFocus,
-                modifier = Modifier.weight(0.38f),
+                modifier = Modifier.weight(0.36f),
             )
             AudioLyricsPanel(
                 cues = state.timedText,
                 positionMs = audio.positionMs,
                 loading = state.lyricsLoading,
-                modifier = Modifier.weight(0.62f),
+                modifier = Modifier.weight(0.64f),
             )
         }
         audio.error?.let {
-            Text(it, color = colorScheme.error, fontSize = 18.sp, modifier = Modifier.padding(top = 8.dp))
+            Text(
+                text = it,
+                color = TvColors.Error,
+                style = TvType.meta,
+                modifier = Modifier.padding(top = TvSpacing.sm),
+            )
         }
-        Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(top = TvSpacing.md)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 TvSeekBar(
                     positionMs = audio.positionMs,
@@ -266,66 +330,98 @@ private fun AudioBody(
                             down = playFocus
                         },
                 )
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(TvSpacing.lg))
                 Text(
                     text = "${formatAudioTime(audio.positionMs)} / ${formatAudioTime(audio.durationMs)}",
-                    color = colorScheme.onSurfaceVariant,
-                    fontSize = 18.sp,
+                    color = TvColors.TextSecondary,
+                    style = TvType.meta,
+                    maxLines = 1,
                 )
             }
+            // 状态行：即使没有焦点，也能看到当前播放模式、定时剩余和歌词来源。
             Row(
-                Modifier.fillMaxWidth().padding(top = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = TvSpacing.md),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(TvSpacing.sm),
             ) {
-                FlowRow(
-                    modifier = Modifier.weight(1f).focusGroup(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    TvButton(
-                        text = "上一首",
-                        modifier = Modifier.focusProperties { up = seekFocus },
-                        onClick = actions.onPrevious,
-                    )
-                    TvButton(
-                        text = if (audio.playing) "暂停" else "播放",
-                        modifier = Modifier.focusRequester(playFocus).focusProperties { up = coverFocus },
-                        onClick = actions.onTogglePlayPause,
-                    )
-                    TvButton(
-                        text = "下一首",
-                        modifier = Modifier.focusProperties { up = seekFocus },
-                        onClick = actions.onNext,
-                    )
-                    TvButton(
-                        text = audio.playMode.label,
-                        modifier = Modifier.focusProperties { up = seekFocus },
-                        onClick = actions.onCyclePlayMode,
-                    )
-                    TvButton(
-                        text = sleepTimerLabel(audio.sleepTimerRemainingMs),
-                        modifier = Modifier.focusRequester(sleepTimerFocus).focusProperties { up = seekFocus },
-                        onClick = onOpenSleepTimer,
-                    )
-                    TvButton(
-                        text = "全屏歌词",
-                        modifier = Modifier
-                            .focusRequester(lyricsButtonFocus)
-                            .focusProperties { up = seekFocus },
-                        onClick = onOpenLyrics,
-                    )
+                TvChip(text = audio.playMode.label)
+                if (timerMinutes > 0) {
+                    TvChip(text = "定时 $timerMinutes 分", accent = true)
                 }
                 state.lyricsSource?.let {
-                    Spacer(Modifier.width(12.dp))
-                    Text(it, color = colorScheme.onSurfaceVariant, fontSize = 18.sp)
+                    Text(
+                        text = it,
+                        modifier = Modifier.weight(1f),
+                        color = TvColors.TextSecondary,
+                        style = TvType.caption,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
+            }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(top = TvSpacing.md).focusGroup(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                TvActionButton(
+                    icon = TvIcons.SkipBack,
+                    label = "上一首",
+                    onClick = actions.onPrevious,
+                    modifier = Modifier.focusProperties { up = seekFocus },
+                )
+                TvActionButton(
+                    icon = if (audio.playing) TvIcons.Pause else TvIcons.Play,
+                    label = if (audio.playing) "暂停" else "播放",
+                    onClick = actions.onTogglePlayPause,
+                    modifier = Modifier.focusRequester(playFocus).focusProperties { up = seekFocus },
+                )
+                TvActionButton(
+                    icon = TvIcons.SkipForward,
+                    label = "下一首",
+                    onClick = actions.onNext,
+                    modifier = Modifier.focusProperties { up = seekFocus },
+                )
+                TvActionButton(
+                    icon = playModeIcon(audio.playMode),
+                    label = audio.playMode.label,
+                    onClick = actions.onCyclePlayMode,
+                    modifier = Modifier.focusProperties { up = seekFocus },
+                )
+                TvActionButton(
+                    icon = TvIcons.Timer,
+                    label = sleepTimerLabel(audio.sleepTimerRemainingMs),
+                    onClick = onOpenSleepTimer,
+                    selected = timerMinutes > 0,
+                    modifier = Modifier.focusRequester(sleepTimerFocus).focusProperties { up = seekFocus },
+                )
+                TvActionButton(
+                    icon = TvIcons.Expand,
+                    label = "全屏歌词",
+                    onClick = onOpenLyrics,
+                    modifier = Modifier
+                        .focusRequester(lyricsButtonFocus)
+                        .focusProperties { up = seekFocus },
+                )
             }
         }
     }
 }
 
-private fun sleepTimerLabel(remainingMs: Long): String =
-    if (remainingMs > 0) "定时 ${(remainingMs + 59_999L) / 60_000L}分" else "定时退出"
+private fun playModeIcon(mode: AudioPlayMode): ImageVector = when (mode) {
+    AudioPlayMode.Sequential -> TvIcons.List
+    AudioPlayMode.RepeatOne -> TvIcons.RepeatOne
+    AudioPlayMode.RepeatAll -> TvIcons.Repeat
+    AudioPlayMode.Shuffle -> TvIcons.Shuffle
+}
+
+private fun sleepTimerMinutes(remainingMs: Long): Long =
+    if (remainingMs > 0) (remainingMs + 59_999L) / 60_000L else 0L
+
+private fun sleepTimerLabel(remainingMs: Long): String {
+    val minutes = sleepTimerMinutes(remainingMs)
+    return if (minutes > 0) "定时 $minutes 分" else "定时退出"
+}
 
 @Composable
 private fun CoverPane(
@@ -335,29 +431,30 @@ private fun CoverPane(
     playFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
+    val motionEnabled = LocalTvMotionEnabled.current
     var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(TvRadius.lg)
     val borderWidth by animateDpAsState(
-        if (focused) 3.dp else 1.dp,
-        animationSpec = tween(160),
-        label = "cover-border",
+        targetValue = if (focused) 2.dp else 1.dp,
+        animationSpec = if (motionEnabled) TvMotion.color<Dp>() else tween(0),
+        label = "cover-border-width",
     )
     val borderColor by animateColorAsState(
-        if (focused) FocusRingColor else colorScheme.outlineVariant,
-        animationSpec = tween(160),
+        targetValue = if (focused) TvColors.FocusRing else TvColors.OutlineVariant,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(0),
         label = "cover-border-color",
     )
     Box(
         modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(8.dp))
-            .background(colorScheme.surfaceVariant)
-            .border(borderWidth, borderColor, RoundedCornerShape(8.dp))
+            .clip(shape)
+            .background(TvColors.Panel)
+            .border(borderWidth, borderColor, shape)
             .onFocusChanged { focused = it.isFocused }
             .focusRequester(focusRequester)
             .focusProperties { down = playFocusRequester }
             .focusable()
-            .tvOkClick(onOpen, role = Role.Button)
+            .tvClickable(onClick = onOpen)
             .semantics { contentDescription = "音频封面，按确认键查看全屏封面" },
         contentAlignment = Alignment.Center,
     ) {
@@ -370,22 +467,18 @@ private fun CoverPane(
             )
         } else {
             Icon(
-                painterResource(R.drawable.ic_disc),
+                imageVector = TvIcons.Disc,
                 contentDescription = "暂无音频封面",
-                tint = colorScheme.secondary,
+                tint = TvColors.TextMuted,
                 modifier = Modifier.size(72.dp),
             )
         }
         if (focused) {
-            Text(
+            TvChip(
                 text = "确认键查看全屏封面",
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(colorScheme.background.copy(alpha = 0.85f))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                color = colorScheme.onBackground,
-                fontSize = 16.sp,
+                    .padding(TvSpacing.md),
             )
         }
     }
@@ -434,7 +527,6 @@ private fun CoverOverlay(
     subtitle: String,
     onClose: () -> Unit,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
     FullscreenLayer(
         onClose = onClose,
         modifier = Modifier
@@ -462,15 +554,15 @@ private fun CoverOverlay(
             Column(
                 Modifier.align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(TvSpacing.md),
             ) {
                 Icon(
-                    painterResource(R.drawable.ic_disc),
+                    imageVector = TvIcons.Disc,
                     contentDescription = "暂无封面",
-                    tint = colorScheme.secondary,
+                    tint = TvColors.TextMuted,
                     modifier = Modifier.size(160.dp),
                 )
-                Text("暂无封面", color = colorScheme.onSurfaceVariant, fontSize = 20.sp)
+                Text("暂无封面", color = TvColors.TextSecondary, style = TvType.body)
             }
         }
         // 浅色封面会让底部文字失去对比度，用渐变把标题区压暗。
@@ -479,36 +571,40 @@ private fun CoverOverlay(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(280.dp)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)))),
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)),
+                    ),
+                ),
         )
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 48.dp, vertical = 32.dp),
+                .padding(horizontal = 48.dp, vertical = TvSpacing.xxxl),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(TvSpacing.xs),
         ) {
             Text(
                 text = title,
-                color = colorScheme.onBackground,
-                fontSize = 26.sp,
+                color = TvColors.TextPrimary,
+                style = TvType.rowTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (subtitle.isNotBlank()) {
                 Text(
                     text = subtitle,
-                    color = colorScheme.onSurfaceVariant,
-                    fontSize = 18.sp,
+                    color = TvColors.TextSecondary,
+                    style = TvType.meta,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             Text(
                 text = "按返回键关闭",
-                modifier = Modifier.padding(top = 8.dp),
-                color = colorScheme.onSurfaceVariant,
-                fontSize = 16.sp,
+                modifier = Modifier.padding(top = TvSpacing.sm),
+                color = TvColors.TextSecondary,
+                style = TvType.caption,
             )
         }
     }
