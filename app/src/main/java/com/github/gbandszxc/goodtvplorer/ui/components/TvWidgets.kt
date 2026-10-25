@@ -17,6 +17,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,6 +62,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -72,6 +75,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.github.gbandszxc.goodtvplorer.ui.theme.LocalTvMotionEnabled
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvColors
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvMotion
@@ -117,6 +121,7 @@ fun TvToggle(
     val motionEnabled = LocalTvMotionEnabled.current
     var focused by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
+    val focusRequester = remember { FocusRequester() }
 
     val trackWidth = ToggleTrackWidth
     val trackHeight = ToggleTrackHeight
@@ -158,6 +163,7 @@ fun TvToggle(
         modifier = modifier
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
             .onFocusChanged { focused = it.isFocused }
+            .focusRequester(focusRequester)
             .toggleable(
                 value = checked,
                 interactionSource = interactionSource,
@@ -165,7 +171,15 @@ fun TvToggle(
                 enabled = enabled,
                 role = Role.Checkbox,
                 onValueChange = onCheckedChange,
-            ),
+            )
+            // 触屏是电视端的兼容路径：按下一个可聚焦控件时同时把焦点移过来，
+            // 不消费事件，toggleable 的点击/开关语义保持不变。
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    focusRequester.requestFocus()
+                }
+            },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(TvSpacing.md),
     ) {
@@ -198,12 +212,15 @@ fun TvToggle(
 /**
  * 自绘输入框：`BasicTextField` + 自定义容器装饰。
  *
- * label 在容器上方；容器 56dp 高、SurfaceSunken 底、1dp Outline 描边、聚焦 2dp FocusRing。
+ * label 默认在容器上方；`inlineLabel = true` 时改为在 56dp 容器内两行显示。
+ * 容器 56dp 高、SurfaceSunken 底、1dp Outline 描边、聚焦 2dp FocusRing。
  * `BasicTextField` 自带 SetText 语义，仪器测试可通过 `hasSetTextAction()` 命中。
  *
  * @param modifier 作用在真正获得焦点的 [BasicTextField] 上，
  * 用于 `focusRequester` / `focusProperties` / `onPreviewKeyEvent` / `onFocusChanged`。
  * @param containerModifier 作用在外层 Column 上，用于 `weight` / `width` / `fillMaxWidth` 等布局约束。
+ * @param inlineLabel 为 true 时不再渲染外部 label，而是在 56dp 容器内以「小号 label + 输入行」
+ * 两行显示；输入行仍由同一个 `BasicTextField` 承载，语义宽度不变。
  */
 @Composable
 fun TvTextField(
@@ -218,6 +235,7 @@ fun TvTextField(
     keyboardType: KeyboardType = KeyboardType.Text,
     imeAction: ImeAction = ImeAction.Next,
     singleLine: Boolean = true,
+    inlineLabel: Boolean = false,
 ) {
     val motionEnabled = LocalTvMotionEnabled.current
     var focused by remember { mutableStateOf(false) }
@@ -234,7 +252,7 @@ fun TvTextField(
     )
 
     Column(containerModifier.graphicsLayer { alpha = if (enabled) 1f else 0.45f }) {
-        if (label.isNotBlank()) {
+        if (!inlineLabel && label.isNotBlank()) {
             Text(
                 text = label,
                 color = TvColors.TextSecondary,
@@ -246,7 +264,9 @@ fun TvTextField(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp)
+                // 内联标签占用了容器内的第一行，整体高度收紧到 52dp；
+                // 12dp 垂直内边距仍能把 label + 输入行完整容纳在裁剪范围内。
+                .height(if (inlineLabel) 52.dp else 56.dp)
                 .clip(shape)
                 .background(TvColors.SurfaceSunken)
                 .border(borderWidth, borderColor, shape),
@@ -267,22 +287,54 @@ fun TvTextField(
                 visualTransformation = visualTransformation,
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
                 decorationBox = { innerTextField ->
-                    // 内边距放在装饰层内部，BasicTextField 的语义宽度保持与容器一致。
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = TvSpacing.md),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        if (value.isEmpty() && placeholder.isNotEmpty()) {
+                    if (inlineLabel) {
+                        // label 与输入行都放在装饰层内：BasicTextField 自身仍铺满容器，
+                        // 因此 hasSetTextAction 的语义宽度不受 12dp 内边距影响。
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = TvSpacing.md, vertical = 6.dp),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
                             Text(
-                                text = placeholder,
+                                text = label,
                                 color = TvColors.TextMuted,
-                                style = TvType.body,
+                                fontSize = 12.sp,
                                 maxLines = 1,
                             )
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (value.isEmpty() && placeholder.isNotEmpty()) {
+                                    Text(
+                                        text = placeholder,
+                                        color = TvColors.TextMuted,
+                                        style = TvType.body,
+                                        maxLines = 1,
+                                    )
+                                }
+                                innerTextField()
+                            }
                         }
-                        innerTextField()
+                    } else {
+                        // 内边距放在装饰层内部，BasicTextField 的语义宽度保持与容器一致。
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = TvSpacing.md),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            if (value.isEmpty() && placeholder.isNotEmpty()) {
+                                Text(
+                                    text = placeholder,
+                                    color = TvColors.TextMuted,
+                                    style = TvType.body,
+                                    maxLines = 1,
+                                )
+                            }
+                            innerTextField()
+                        }
                     }
                 },
             )

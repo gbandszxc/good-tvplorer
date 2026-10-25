@@ -56,13 +56,10 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.github.gbandszxc.goodtvplorer.ui.theme.LocalTvMotionEnabled
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvColors
-import com.github.gbandszxc.goodtvplorer.ui.theme.TvIcons
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvMotion
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvRadius
 import com.github.gbandszxc.goodtvplorer.ui.theme.TvSizes
@@ -408,49 +405,6 @@ fun TvRailAction(
     }
 }
 
-/**
- * 旧页面兼容壳：保留原文字按钮签名，内部映射到 [TvActionButton]。
- *
- * @Deprecated 新代码请使用 [TvActionButton]；该壳仅用于本次重构过渡期。
- */
-@Deprecated("迁移到 TvActionButton")
-@Composable
-fun TvButton(
-    text: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    contentPadding: PaddingValues = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
-    contentAlignment: Alignment = Alignment.CenterStart,
-    contentDescription: String? = null,
-    fontSize: TextUnit = 20.sp,
-    destructive: Boolean = false,
-    onClick: () -> Unit,
-) {
-    TvActionButtonImpl(
-        icon = TvIcons.Check,
-        label = text,
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        tone = if (destructive) TvActionTone.Destructive else TvActionTone.Neutral,
-        labelMode = TvLabelMode.Always,
-        compact = false,
-        selected = false,
-        contentDescription = contentDescription,
-        contentAlignment = contentAlignment,
-        contentPadding = contentPadding,
-        labelStyle = TvType.label.copy(fontSize = fontSize),
-    )
-}
-
-fun Modifier.tvOkClick(
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    role: Role? = null,
-    onTouchClick: (() -> Unit)? = null,
-): Modifier = then(if (enabled) Modifier.onTvOk(onClick) else Modifier)
-    .clickable(enabled = enabled, role = role, onClick = onTouchClick ?: onClick)
-
 fun Modifier.tvTabClick(
     selected: Boolean,
     onClick: () -> Unit,
@@ -460,6 +414,9 @@ fun Modifier.tvTabClick(
 /**
  * 无 ripple 的 TV 点击容器：方向键确认走 preview 拦截，触屏走 clickable。
  *
+ * 遥控 / Enter 永远触发 [onClick]；触屏触发 [onTouchClick]（缺省回退到 [onClick]），
+ * 便于调用方在触屏上先聚焦、再打开。
+ *
  * 由于需要持有 [MutableInteractionSource] 以关闭 indication，这里声明为
  * `@Composable` 工厂，只能在组合中调用。
  */
@@ -468,6 +425,7 @@ fun Modifier.tvClickable(
     enabled: Boolean = true,
     role: Role? = Role.Button,
     onClick: () -> Unit,
+    onTouchClick: (() -> Unit)? = null,
 ): Modifier {
     val interactionSource = remember { MutableInteractionSource() }
     return this
@@ -477,7 +435,7 @@ fun Modifier.tvClickable(
             indication = null,
             enabled = enabled,
             role = role,
-            onClick = onClick,
+            onClick = onTouchClick ?: onClick,
         )
 }
 

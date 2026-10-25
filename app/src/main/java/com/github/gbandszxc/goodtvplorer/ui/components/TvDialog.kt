@@ -3,6 +3,7 @@ package com.github.gbandszxc.goodtvplorer.ui.components
 import android.graphics.Color as AndroidColor
 import android.graphics.drawable.ColorDrawable
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -90,6 +91,8 @@ fun TvDialog(
     ) {
         CompositionLocalProvider(LocalDensity provides density) {
             TransparentDialogWindow()
+            // 该窗口/输入路径下 DialogProperties.dismissOnBackPress 未生效，显式接管返回键。
+            BackHandler(enabled = dismissible) { onDismissRequest() }
             DialogPanel(
                 title = title,
                 modifier = modifier,
@@ -128,6 +131,7 @@ fun TvMenu(
     ) {
         CompositionLocalProvider(LocalDensity provides density) {
             TransparentDialogWindow()
+            BackHandler { onDismissRequest() }
             val motionEnabled = LocalTvMotionEnabled.current
             var entered by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) { entered = true }
