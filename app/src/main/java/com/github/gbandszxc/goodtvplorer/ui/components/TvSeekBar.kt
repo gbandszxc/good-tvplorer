@@ -3,29 +3,30 @@ package com.github.gbandszxc.goodtvplorer.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -34,71 +35,102 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.github.gbandszxc.goodtvplorer.ui.theme.LocalTvMotionEnabled
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvColors
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvMotion
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvRadius
+import com.github.gbandszxc.goodtvplorer.ui.theme.TvSizes
 import kotlin.math.roundToLong
-
-/** 项目统一的焦点描边色，与 TvButton 保持一致。 */
-private val FocusRingColor = Color(0xFFFFE3A1)
 
 /** 遥控器左右键步进 seek 的步长（毫秒），与音频页现状一致。 */
 private const val SEEK_STEP_MS = 10_000L
 
+/** 轨道与容器左右边缘的内边距，供绘制与触屏换算共用。 */
+private val SeekBarHorizontalPadding = 12.dp
+
+/** 轨道高度。 */
+private val SeekBarTrackHeight = 8.dp
+
+private val SeekBarThumbIdle = 6.dp
+private val SeekBarThumbFocused = 8.dp
+
 /**
- * 音 / 视频共用的遥控器进度条。
- * 样式沿用 TvButton 焦点 token：48dp 高、8dp 圆角；静止态 colorScheme.surfaceVariant 背景 + 1dp outlineVariant 描边，
- * 焦点态 surface 背景 + 3dp 焦点描边（0xFFFFE3A1，即 AudioPlayerScreen.kt:74 的 FocusRingColor）；
- * 进度 primary、轨道 outlineVariant。
- * 触屏：点击立即 onSeek；水平拖动仅预览（dragging/previewMs），松手 onSeek(previewMs)，取消不 seek。
- * 遥控器：KeyDown 的左/右按 10_000ms 步进 seek 并消费——音频页用法（按钮行无 seek 按钮，
- * 行内消费是唯一遥控器 seek 入口）；其余按键（含上/下）一律 return false，交给调用方 modifier
- * 上的 focusProperties/onPreviewKeyEvent 决定跨行移动。视频控制层因进度行内无其他可聚焦控件，
- * 行内消费会让焦点永远无法离开进度条，故调用方在 onPreviewKeyEvent（preview 阶段先于本层）
- * 接管左右键为「±10 秒 + 移入 −10秒/+10秒 按钮」，本层分支在该页不触发。
- * durationMs <= 0：不响应触屏、不消费方向键、进度恒 0，但保持可聚焦。
+ * 音 / 视频共用的遥控器进度条（自绘，无 Material 指示器）。
+ *
+ * - 轨道 8dp 全圆角：静止 OutlineVariant、缓冲 SurfaceRaised、进度 Accent（聚焦 Focus）。
+ * - 滑块 12dp（聚焦 16dp），聚焦时 2dp FocusRing 描边 + Surface 背景。
+ * - 触屏：点击立即 onSeek；水平拖动只预览（dragging/previewMs），松手提交，取消不提交。
+ * - 遥控器：KeyDown 左右按 10 秒步进并消费；durationMs <= 0 时不消费方向键、不响应触屏。
  */
 @Composable
 fun TvSeekBar(
-    positionMs: Long,        // 当前播放位置（毫秒）；拖动预览期间内部改显示预览值
-    durationMs: Long,        // 总时长（毫秒）；<= 0 视为不可用
-    onSeek: (Long) -> Unit,  // 点击、松手、左右键步进共用回调
+    positionMs: Long,
+    durationMs: Long,
+    onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    bufferedMs: Long = 0,
+    showThumb: Boolean = true,
 ) {
-    val colorScheme = MaterialTheme.colorScheme
+    val motionEnabled = LocalTvMotionEnabled.current
     var focused by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
     var previewMs by remember { mutableLongStateOf(positionMs) }
+
+    val shape = RoundedCornerShape(TvRadius.md)
     val borderWidth by animateDpAsState(
-        if (focused) 3.dp else 1.dp,
-        animationSpec = tween(160),
-        label = "seek-border",
+        targetValue = if (focused) 2.dp else 1.dp,
+        animationSpec = if (motionEnabled) TvMotion.color<Dp>() else tween(durationMillis = 0),
+        label = "seek-border-width",
     )
     val borderColor by animateColorAsState(
-        if (focused) FocusRingColor else colorScheme.outlineVariant,
-        animationSpec = tween(160),
+        targetValue = if (focused) TvColors.FocusRing else TvColors.OutlineVariant,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
         label = "seek-border-color",
     )
+    val progressColor by animateColorAsState(
+        targetValue = if (focused) TvColors.Focus else TvColors.Accent,
+        animationSpec = if (motionEnabled) TvMotion.color() else tween(durationMillis = 0),
+        label = "seek-progress-color",
+    )
+    val thumbRadius by animateDpAsState(
+        targetValue = if (focused) SeekBarThumbFocused else SeekBarThumbIdle,
+        animationSpec = when {
+            !motionEnabled -> tween(durationMillis = 0)
+            focused -> TvMotion.expand<Dp>()
+            else -> TvMotion.collapse<Dp>()
+        },
+        label = "seek-thumb-radius",
+    )
+
     val displayPosition = if (dragging) previewMs else positionMs
+    val progressFraction = if (durationMs <= 0) 0f else (displayPosition.toFloat() / durationMs).coerceIn(0f, 1f)
+    val bufferedFraction = if (durationMs <= 0) 0f else (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f)
+
     Box(
-        modifier
-            .height(48.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (focused) colorScheme.surface else colorScheme.surfaceVariant)
-            .border(borderWidth, borderColor, RoundedCornerShape(8.dp))
+        modifier = modifier
+            .height(TvSizes.action)
+            .clip(shape)
+            .background(if (focused) TvColors.Surface else Color.Transparent)
+            .border(borderWidth, borderColor, shape)
             .onFocusChanged { focused = it.isFocused }
             .focusable()
             .semantics { contentDescription = "播放进度，左右键或触屏拖动调整" }
             .pointerInput(durationMs) {
                 if (durationMs <= 0) return@pointerInput
+                val horizontalPadding = SeekBarHorizontalPadding.toPx()
                 detectTapGestures { offset ->
-                    onSeek(seekPosition(durationMs, offset.x, size.width))
+                    onSeek(seekPosition(durationMs, offset.x, size.width, horizontalPadding))
                 }
             }
             .pointerInput(durationMs) {
                 if (durationMs <= 0) return@pointerInput
+                val horizontalPadding = SeekBarHorizontalPadding.toPx()
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
                         dragging = true
-                        previewMs = seekPosition(durationMs, offset.x, size.width)
+                        previewMs = seekPosition(durationMs, offset.x, size.width, horizontalPadding)
                     },
                     onDragEnd = {
                         onSeek(previewMs)
@@ -107,7 +139,7 @@ fun TvSeekBar(
                     onDragCancel = { dragging = false },
                 ) { change, _ ->
                     change.consume()
-                    previewMs = seekPosition(durationMs, change.position.x, size.width)
+                    previewMs = seekPosition(durationMs, change.position.x, size.width, horizontalPadding)
                 }
             }
             .onPreviewKeyEvent { event ->
@@ -123,21 +155,61 @@ fun TvSeekBar(
                     }
                     else -> false
                 }
-            }
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        LinearProgressIndicator(
-            progress = {
-                if (durationMs <= 0) 0f else (displayPosition.toFloat() / durationMs).coerceIn(0f, 1f)
             },
-            modifier = Modifier.fillMaxWidth(),
-            color = colorScheme.primary,
-            trackColor = colorScheme.outlineVariant,
-        )
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val inset = SeekBarHorizontalPadding.toPx()
+            val trackHeight = SeekBarTrackHeight.toPx()
+            val trackWidth = (size.width - inset * 2f).coerceAtLeast(0f)
+            if (trackWidth <= 0f) return@Canvas
+            val trackTop = (size.height - trackHeight) / 2f
+            val cornerRadius = CornerRadius(trackHeight / 2f, trackHeight / 2f)
+
+            drawRoundRect(
+                color = TvColors.OutlineVariant,
+                topLeft = Offset(inset, trackTop),
+                size = Size(trackWidth, trackHeight),
+                cornerRadius = cornerRadius,
+            )
+            if (bufferedFraction > 0f) {
+                drawRoundRect(
+                    color = TvColors.SurfaceRaised,
+                    topLeft = Offset(inset, trackTop),
+                    size = Size(trackWidth * bufferedFraction, trackHeight),
+                    cornerRadius = cornerRadius,
+                )
+            }
+            if (progressFraction > 0f) {
+                drawRoundRect(
+                    color = progressColor,
+                    topLeft = Offset(inset, trackTop),
+                    size = Size(trackWidth * progressFraction, trackHeight),
+                    cornerRadius = cornerRadius,
+                )
+            }
+            if (showThumb) {
+                val radius = thumbRadius.toPx()
+                val centerX = inset + trackWidth * progressFraction
+                val center = Offset(centerX, size.height / 2f)
+                drawCircle(color = TvColors.Surface, radius = radius, center = center)
+                drawCircle(
+                    color = if (focused) TvColors.FocusRing else TvColors.OutlineVariant,
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = if (focused) 2.dp.toPx() else 1.dp.toPx()),
+                )
+            }
+        }
     }
 }
 
-/** 点击 / 拖动位置按可用宽度换算为进度（毫秒），与视频页换算口径一致。 */
-private fun seekPosition(duration: Long, x: Float, width: Int): Long =
-    if (duration <= 0 || width <= 0) 0 else (duration * (x / width).coerceIn(0f, 1f)).roundToLong()
+/**
+ * 点击 / 拖动位置按扣除左右内边距后的可用宽度换算为进度（毫秒），与轨道视觉一致。
+ */
+private fun seekPosition(duration: Long, x: Float, width: Int, horizontalPadding: Float): Long {
+    if (duration <= 0) return 0L
+    val usableWidth = width.toFloat() - horizontalPadding * 2f
+    if (usableWidth <= 0f) return 0L
+    val fraction = ((x - horizontalPadding) / usableWidth).coerceIn(0f, 1f)
+    return (duration.toDouble() * fraction).roundToLong().coerceIn(0L, duration)
+}
